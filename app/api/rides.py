@@ -1,5 +1,6 @@
 from flask import request
 from flask_restx import Namespace, Resource, fields
+from flask_jwt_extended import jwt_required
 from datetime import datetime
 
 from app.extensions import db
@@ -27,14 +28,16 @@ ride_response = api.model('RideResponse', {
 
 @api.route('/')
 class RideList(Resource):
-    @api.doc('list_rides')
+    @jwt_required()
+    @api.doc('list_rides', security='Bearer')
     @api.marshal_list_with(ride_response)
     def get(self):
         """List all rides"""
         rides = Ride.query.all()
         return rides
 
-    @api.doc('create_ride')
+    @jwt_required()
+    @api.doc('create_ride', security='Bearer')
     @api.expect(ride_create)
     @api.marshal_with(ride_response)
     def post(self):

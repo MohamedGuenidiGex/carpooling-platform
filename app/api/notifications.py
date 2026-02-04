@@ -1,4 +1,5 @@
 from flask_restx import Namespace, Resource, fields
+from flask_jwt_extended import jwt_required
 
 from app.extensions import db
 from app.models import Notification
@@ -24,7 +25,8 @@ notification_read_response = api.model('NotificationReadResponse', {
 @api.route('/<int:employee_id>')
 @api.param('employee_id', 'Employee ID')
 class NotificationList(Resource):
-    @api.doc('list_notifications')
+    @jwt_required()
+    @api.doc('list_notifications', security='Bearer')
     @api.marshal_list_with(notification_response)
     def get(self, employee_id):
         """List all notifications for an employee (newest first)"""
@@ -36,7 +38,8 @@ class NotificationList(Resource):
 @api.route('/<int:notification_id>/read')
 @api.param('notification_id', 'Notification ID')
 class NotificationRead(Resource):
-    @api.doc('mark_notification_read')
+    @jwt_required()
+    @api.doc('mark_notification_read', security='Bearer')
     @api.marshal_with(notification_read_response)
     def patch(self, notification_id):
         """Mark a notification as read"""

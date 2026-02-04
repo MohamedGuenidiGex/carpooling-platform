@@ -1,5 +1,6 @@
 from flask import request
 from flask_restx import Namespace, Resource, fields
+from flask_jwt_extended import jwt_required
 
 from app.extensions import db
 from app.models import Reservation, Ride, Employee, Notification
@@ -23,14 +24,16 @@ reservation_response = api.model('ReservationResponse', {
 
 @api.route('/')
 class ReservationList(Resource):
-    @api.doc('list_reservations')
+    @jwt_required()
+    @api.doc('list_reservations', security='Bearer')
     @api.marshal_list_with(reservation_response)
     def get(self):
         """List all reservations"""
         reservations = Reservation.query.all()
         return reservations
 
-    @api.doc('create_reservation')
+    @jwt_required()
+    @api.doc('create_reservation', security='Bearer')
     @api.expect(reservation_create)
     @api.marshal_with(reservation_response)
     def post(self):
