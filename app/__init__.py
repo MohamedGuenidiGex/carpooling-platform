@@ -19,6 +19,8 @@ def create_app(config_name):
 
     from .utils.seed import seed_demo_data
     with app.app_context():
+        # Create tables if they don't exist (for first run)
+        db.create_all()
         seed_demo_data()
 
     return app
