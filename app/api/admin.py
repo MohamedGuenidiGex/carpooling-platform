@@ -7,6 +7,12 @@ from app.models import Employee, Ride, Reservation
 
 api = Namespace('admin', description='Admin operations and statistics')
 
+# Error response model
+error_response = api.model('ErrorResponse', {
+    'error': fields.String(description='Error code (e.g., VALIDATION_ERROR, NOT_FOUND, UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR)'),
+    'message': fields.String(description='Human readable error message')
+})
+
 admin_stats_response = api.model('AdminStatsResponse', {
     'total_employees': fields.Integer(description='Total number of employees'),
     'total_rides': fields.Integer(description='Total number of rides'),
@@ -21,7 +27,12 @@ admin_stats_response = api.model('AdminStatsResponse', {
 @api.route('/stats')
 class AdminStats(Resource):
     @jwt_required()
-    @api.doc('get_stats', security='Bearer', description='Get platform statistics and metrics')
+    @api.doc('get_stats', security='Bearer', description='Get platform statistics and metrics',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(admin_stats_response)
     def get(self):
         """Get aggregated platform statistics"""

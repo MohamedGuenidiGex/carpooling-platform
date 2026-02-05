@@ -8,6 +8,12 @@ from app.models import Ride, Employee, Reservation
 
 api = Namespace('rides', description='Ride operations')
 
+# Error response model
+error_response = api.model('ErrorResponse', {
+    'error': fields.String(description='Error code (e.g., VALIDATION_ERROR, NOT_FOUND, UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR)'),
+    'message': fields.String(description='Human readable error message')
+})
+
 ride_create = api.model('RideCreate', {
     'driver_id': fields.Integer(required=True, description='Employee ID of the driver'),
     'origin': fields.String(required=True, description='Pickup location'),
@@ -47,15 +53,22 @@ paginated_rides_response = api.model('PaginatedRidesResponse', {
 @api.route('/')
 class RideList(Resource):
     @jwt_required()
-    @api.doc('list_rides', security='Bearer', params={
-        'origin': {'description': 'Filter by origin (partial match, case-insensitive)', 'type': 'string', 'required': False},
-        'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False},
-        'date_from': {'description': 'Filter rides from this date (ISO datetime)', 'type': 'string', 'required': False},
-        'date_to': {'description': 'Filter rides up to this date (ISO datetime)', 'type': 'string', 'required': False},
-        'sort_by': {'description': 'Sort results: date_asc (default) or date_desc', 'type': 'string', 'required': False, 'enum': ['date_asc', 'date_desc']},
-        'page': {'description': 'Page number (default: 1)', 'type': 'integer', 'required': False, 'default': 1},
-        'per_page': {'description': 'Items per page (default: 10, max: 50)', 'type': 'integer', 'required': False, 'default': 10}
-    })
+    @api.doc('list_rides', security='Bearer', 
+        params={
+            'origin': {'description': 'Filter by origin (partial match, case-insensitive)', 'type': 'string', 'required': False},
+            'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False},
+            'date_from': {'description': 'Filter rides from this date (ISO datetime)', 'type': 'string', 'required': False},
+            'date_to': {'description': 'Filter rides up to this date (ISO datetime)', 'type': 'string', 'required': False},
+            'sort_by': {'description': 'Sort results: date_asc (default) or date_desc', 'type': 'string', 'required': False, 'enum': ['date_asc', 'date_desc']},
+            'page': {'description': 'Page number (default: 1)', 'type': 'integer', 'required': False, 'default': 1},
+            'per_page': {'description': 'Items per page (default: 10, max: 50)', 'type': 'integer', 'required': False, 'default': 10}
+        },
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(paginated_rides_response)
     def get(self):
         """List all rides with optional filtering, sorting, and pagination"""
@@ -126,7 +139,14 @@ class RideList(Resource):
         }
 
     @jwt_required()
-    @api.doc('create_ride', security='Bearer')
+    @api.doc('create_ride', security='Bearer',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            404: ('Driver not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.expect(ride_create)
     @api.marshal_with(ride_response)
     def post(self):
@@ -153,7 +173,13 @@ class RideList(Resource):
 @api.param('id', 'Ride ID')
 class RideDetail(Resource):
     @jwt_required()
-    @api.doc('get_ride', security='Bearer', description='Get a single ride by ID')
+    @api.doc('get_ride', security='Bearer', description='Get a single ride by ID',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(ride_response)
     def get(self, id):
         """Get a single ride by ID"""
@@ -163,7 +189,13 @@ class RideDetail(Resource):
         return ride
 
     @jwt_required()
-    @api.doc('delete_ride', security='Bearer', description='Delete a ride by ID')
+    @api.doc('delete_ride', security='Bearer', description='Delete a ride by ID',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     def delete(self, id):
         """Delete a ride by ID"""
         ride = Ride.query.get(id)
@@ -174,7 +206,15 @@ class RideDetail(Resource):
         return {'message': 'Ride deleted successfully'}, 200
 
     @jwt_required()
-    @api.doc('update_ride', security='Bearer', description='Update ride details (only by driver). Cannot update COMPLETED rides.')
+    @api.doc('update_ride', security='Bearer', description='Update ride details (only by driver). Cannot update COMPLETED rides.',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can update', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.expect(ride_create)
     @api.marshal_with(ride_response)
     def put(self, id):
@@ -225,7 +265,15 @@ class RideDetail(Resource):
 @api.param('id', 'Ride ID')
 class RideComplete(Resource):
     @jwt_required()
-    @api.doc('complete_ride', security='Bearer', description='Mark ride as COMPLETED (only by driver). Completed rides cannot be edited or booked.')
+    @api.doc('complete_ride', security='Bearer', description='Mark ride as COMPLETED (only by driver). Completed rides cannot be edited or booked.',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can complete', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(ride_response)
     def patch(self, id):
         """Mark a ride as completed (only the driver can complete)"""
@@ -252,7 +300,14 @@ class RideComplete(Resource):
 @api.param('id', 'Ride ID')
 class RideParticipants(Resource):
     @jwt_required()
-    @api.doc('list_participants', security='Bearer', description='Get list of participants in a ride (driver only)')
+    @api.doc('list_participants', security='Bearer', description='Get list of participants in a ride (driver only)',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can view participants', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(participant_response)
     def get(self, id):
         """List ride participants (only the driver can access)"""

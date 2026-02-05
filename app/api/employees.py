@@ -7,6 +7,12 @@ from app.models import Employee, Ride, Reservation
 
 api = Namespace('employees', description='Employee operations')
 
+# Error response model
+error_response = api.model('ErrorResponse', {
+    'error': fields.String(description='Error code (e.g., VALIDATION_ERROR, NOT_FOUND, UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR)'),
+    'message': fields.String(description='Human readable error message')
+})
+
 employee_create = api.model('EmployeeCreate', {
     'name': fields.String(required=True, description='Employee name'),
     'email': fields.String(required=True, description='Employee email'),
@@ -45,14 +51,23 @@ reservation_response = api.model('ReservationResponse', {
 
 @api.route('/')
 class EmployeeList(Resource):
-    @api.doc('list_employees')
+    @api.doc('list_employees',
+        responses={
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_list_with(employee_response)
     def get(self):
         """List all employees"""
         employees = Employee.query.all()
         return employees
 
-    @api.doc('create_employee')
+    @api.doc('create_employee',
+        responses={
+            400: ('Validation error', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.expect(employee_create)
     @api.marshal_with(employee_response)
     def post(self):
@@ -73,7 +88,12 @@ class EmployeeList(Resource):
 @api.route('/me/rides')
 class MyRides(Resource):
     @jwt_required()
-    @api.doc('my_rides', security='Bearer', description='Get all rides where the current employee is the driver')
+    @api.doc('my_rides', security='Bearer', description='Get all rides where the current employee is the driver',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_list_with(ride_response)
     def get(self):
         """Get all rides where the current employee is the driver"""
@@ -85,7 +105,12 @@ class MyRides(Resource):
 @api.route('/me/reservations')
 class MyReservations(Resource):
     @jwt_required()
-    @api.doc('my_reservations', security='Bearer', description='Get all reservations made by the current employee')
+    @api.doc('my_reservations', security='Bearer', description='Get all reservations made by the current employee',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_list_with(reservation_response)
     def get(self):
         """Get all reservations made by the current employee"""
@@ -108,7 +133,12 @@ history_item = api.model('HistoryItem', {
 @api.route('/me/history')
 class MyHistory(Resource):
     @jwt_required()
-    @api.doc('my_history', security='Bearer', description='Get combined timeline of rides driven and reservations made')
+    @api.doc('my_history', security='Bearer', description='Get combined timeline of rides driven and reservations made',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_list_with(history_item)
     def get(self):
         """Get combined timeline of employee activity (rides driven + reservations made)"""

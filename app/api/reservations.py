@@ -7,6 +7,12 @@ from app.models import Reservation, Ride, Employee, Notification
 
 api = Namespace('reservations', description='Reservation operations')
 
+# Error response model
+error_response = api.model('ErrorResponse', {
+    'error': fields.String(description='Error code (e.g., VALIDATION_ERROR, NOT_FOUND, UNAUTHORIZED, FORBIDDEN, INTERNAL_ERROR)'),
+    'message': fields.String(description='Human readable error message')
+})
+
 reservation_create = api.model('ReservationCreate', {
     'employee_id': fields.Integer(required=True, description='Employee ID of the rider'),
     'ride_id': fields.Integer(required=True, description='Ride ID to reserve'),
@@ -25,7 +31,12 @@ reservation_response = api.model('ReservationResponse', {
 @api.route('/')
 class ReservationList(Resource):
     @jwt_required()
-    @api.doc('list_reservations', security='Bearer')
+    @api.doc('list_reservations', security='Bearer',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_list_with(reservation_response)
     def get(self):
         """List all reservations"""
@@ -33,7 +44,14 @@ class ReservationList(Resource):
         return reservations
 
     @jwt_required()
-    @api.doc('create_reservation', security='Bearer', description='Request a seat on a ride. Creates PENDING reservation. Driver must approve.')
+    @api.doc('create_reservation', security='Bearer', description='Request a seat on a ride. Creates PENDING reservation. Driver must approve.',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.expect(reservation_create)
     @api.marshal_with(reservation_response)
     def post(self):
@@ -116,7 +134,15 @@ class ReservationList(Resource):
 @api.param('id', 'Reservation ID')
 class ReservationCancel(Resource):
     @jwt_required()
-    @api.doc('cancel_reservation', security='Bearer', description='Cancel a reservation (only by creator). Sets status to CANCELLED and restores seats (only if CONFIRMED).')
+    @api.doc('cancel_reservation', security='Bearer', description='Cancel a reservation (only by creator). Sets status to CANCELLED and restores seats (only if CONFIRMED).',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only creator can cancel', error_response),
+            404: ('Reservation not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(reservation_response)
     def post(self, id):
         """Cancel a reservation (only the creator can cancel)"""
@@ -154,7 +180,15 @@ class ReservationCancel(Resource):
 @api.param('id', 'Reservation ID')
 class ReservationApprove(Resource):
     @jwt_required()
-    @api.doc('approve_reservation', security='Bearer', description='Approve a PENDING reservation (driver only). Deducts seats and sets status to CONFIRMED.')
+    @api.doc('approve_reservation', security='Bearer', description='Approve a PENDING reservation (driver only). Deducts seats and sets status to CONFIRMED.',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can approve', error_response),
+            404: ('Reservation not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(reservation_response)
     def patch(self, id):
         """Approve a reservation (only the ride driver can approve)"""
@@ -211,7 +245,15 @@ class ReservationApprove(Resource):
 @api.param('id', 'Reservation ID')
 class ReservationReject(Resource):
     @jwt_required()
-    @api.doc('reject_reservation', security='Bearer', description='Reject a PENDING reservation (driver only). Sets status to REJECTED. No seat changes.')
+    @api.doc('reject_reservation', security='Bearer', description='Reject a PENDING reservation (driver only). Sets status to REJECTED. No seat changes.',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can reject', error_response),
+            404: ('Reservation not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     @api.marshal_with(reservation_response)
     def patch(self, id):
         """Reject a reservation (only the ride driver can reject)"""
@@ -256,7 +298,13 @@ class ReservationReject(Resource):
 @api.param('id', 'Reservation ID')
 class ReservationDetail(Resource):
     @jwt_required()
-    @api.doc('delete_reservation', security='Bearer', description='Delete a reservation by ID')
+    @api.doc('delete_reservation', security='Bearer', description='Delete a reservation by ID',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            404: ('Reservation not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
     def delete(self, id):
         """Delete a reservation by ID"""
         reservation = Reservation.query.get(id)
