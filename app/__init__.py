@@ -14,6 +14,11 @@ def create_app(config_name):
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    
+    # Register global error handlers for standardized responses
+    from .utils.error_handlers import register_error_handlers
+    register_error_handlers(app)
+    
     from . import models as _models  # noqa: F401
     init_api(app)
 
