@@ -1,3 +1,4 @@
+from flask import request
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required
 
@@ -5,6 +6,12 @@ from app.extensions import db
 from app.models import Notification
 
 api = Namespace('notifications', description='Notification operations')
+
+notification_create = api.model('NotificationCreate', {
+    'employee_id': fields.Integer(required=True, description='Employee ID to notify'),
+    'ride_id': fields.Integer(required=False, description='Related ride ID (optional)'),
+    'message': fields.String(required=True, description='Notification message content')
+})
 
 notification_response = api.model('NotificationResponse', {
     'id': fields.Integer(description='Notification ID'),
@@ -20,6 +27,35 @@ notification_read_response = api.model('NotificationReadResponse', {
     'message': fields.String(description='Notification message'),
     'is_read': fields.Boolean(description='Read status')
 })
+
+
+@api.route('/')
+class NotificationCreate(Resource):
+    @jwt_required()
+    @api.doc('create_notification', security='Bearer', description='Create a custom notification for an employee')
+    @api.expect(notification_create)
+    @api.marshal_with(notification_response)
+    def post(self):
+        """Create a custom notification"""
+        data = request.get_json() or {}
+        
+        employee_id = data.get('employee_id')
+        message = data.get('message')
+        ride_id = data.get('ride_id')
+        
+        if not employee_id or not message:
+            api.abort(400, 'employee_id and message are required')
+        
+        notification = Notification(
+            employee_id=employee_id,
+            ride_id=ride_id,
+            message=message,
+            is_read=False
+        )
+        db.session.add(notification)
+        db.session.commit()
+        
+        return notification, 201
 
 
 @api.route('/<int:employee_id>')
