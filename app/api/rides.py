@@ -86,3 +86,14 @@ class RideDetail(Resource):
         if not ride:
             api.abort(404, 'Ride not found')
         return ride
+
+    @jwt_required()
+    @api.doc('delete_ride', security='Bearer', description='Delete a ride by ID')
+    def delete(self, id):
+        """Delete a ride by ID"""
+        ride = Ride.query.get(id)
+        if not ride:
+            api.abort(404, 'Ride not found')
+        db.session.delete(ride)
+        db.session.commit()
+        return {'message': 'Ride deleted successfully'}, 200

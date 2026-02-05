@@ -74,3 +74,24 @@ class ReservationList(Resource):
         db.session.add(notification)
         db.session.commit()
         return reservation, 201
+
+
+@api.route('/<int:id>')
+@api.param('id', 'Reservation ID')
+class ReservationDetail(Resource):
+    @jwt_required()
+    @api.doc('delete_reservation', security='Bearer', description='Delete a reservation by ID')
+    def delete(self, id):
+        """Delete a reservation by ID"""
+        reservation = Reservation.query.get(id)
+        if not reservation:
+            api.abort(404, 'Reservation not found')
+        
+        # Restore available seats
+        ride = Ride.query.get(reservation.ride_id)
+        if ride:
+            ride.available_seats += reservation.seats_reserved
+        
+        db.session.delete(reservation)
+        db.session.commit()
+        return {'message': 'Reservation deleted successfully'}, 200

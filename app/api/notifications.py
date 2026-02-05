@@ -50,3 +50,18 @@ class NotificationRead(Resource):
         notification.is_read = True
         db.session.commit()
         return notification
+
+
+@api.route('/<int:notification_id>')
+@api.param('notification_id', 'Notification ID')
+class NotificationDetail(Resource):
+    @jwt_required()
+    @api.doc('delete_notification', security='Bearer', description='Delete a notification by ID')
+    def delete(self, notification_id):
+        """Delete a notification by ID"""
+        notification = Notification.query.get(notification_id)
+        if not notification:
+            api.abort(404, 'Notification not found')
+        db.session.delete(notification)
+        db.session.commit()
+        return {'message': 'Notification deleted successfully'}, 200
