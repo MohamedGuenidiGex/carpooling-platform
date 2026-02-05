@@ -72,3 +72,17 @@ class RideList(Resource):
         db.session.add(ride)
         db.session.commit()
         return ride, 201
+
+
+@api.route('/<int:id>')
+@api.param('id', 'Ride ID')
+class RideDetail(Resource):
+    @jwt_required()
+    @api.doc('get_ride', security='Bearer', description='Get a single ride by ID')
+    @api.marshal_with(ride_response)
+    def get(self, id):
+        """Get a single ride by ID"""
+        ride = Ride.query.get(id)
+        if not ride:
+            api.abort(404, 'Ride not found')
+        return ride
