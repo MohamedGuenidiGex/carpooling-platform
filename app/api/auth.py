@@ -51,6 +51,15 @@ dev_token_response = api.model('DevTokenResponse', {
     'token_type': fields.String(description='Token type (Bearer)')
 })
 
+change_password_request = api.model('ChangePasswordRequest', {
+    'current_password': fields.String(required=True, description='Current password'),
+    'new_password': fields.String(required=True, description='New password')
+})
+
+change_password_response = api.model('ChangePasswordResponse', {
+    'message': fields.String(description='Success message')
+})
+
 
 @api.route('/register')
 class Register(Resource):
@@ -134,6 +143,39 @@ class Me(Resource):
             api.abort(404, 'Employee not found')
 
         return employee
+
+
+@api.route('/change-password')
+class ChangePassword(Resource):
+    @jwt_required()
+    @api.doc('change_password', security='Bearer', description='Change employee password')
+    @api.expect(change_password_request)
+    @api.marshal_with(change_password_response)
+    def post(self):
+        """Change current employee's password"""
+        employee_id = int(get_jwt_identity())
+        employee = Employee.query.get(employee_id)
+
+        if not employee:
+            api.abort(404, 'Employee not found')
+
+        data = request.get_json() or {}
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+
+        if not current_password or not new_password:
+            api.abort(400, 'current_password and new_password are required')
+
+        if not employee.check_password(current_password):
+            api.abort(401, 'Current password is incorrect')
+
+        if len(new_password) < 6:
+            api.abort(400, 'New password must be at least 6 characters')
+
+        employee.set_password(new_password)
+        db.session.commit()
+
+        return {'message': 'Password changed successfully'}, 200
 
 
 @api.route('/dev-token')
