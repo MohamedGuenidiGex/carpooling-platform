@@ -92,3 +92,62 @@ class MyReservations(Resource):
         employee_id = int(get_jwt_identity())
         reservations = Reservation.query.filter_by(employee_id=employee_id).all()
         return reservations
+
+
+# History item model for combined timeline
+history_item = api.model('HistoryItem', {
+    'type': fields.String(description='Activity type (DRIVER_RIDE or RESERVATION)'),
+    'ride_id': fields.Integer(description='Ride ID'),
+    'origin': fields.String(description='Pickup location'),
+    'destination': fields.String(description='Drop-off location'),
+    'departure_time': fields.DateTime(description='Departure datetime'),
+    'status': fields.String(description='Ride status')
+})
+
+
+@api.route('/me/history')
+class MyHistory(Resource):
+    @jwt_required()
+    @api.doc('my_history', security='Bearer', description='Get combined timeline of rides driven and reservations made')
+    @api.marshal_list_with(history_item)
+    def get(self):
+        """Get combined timeline of employee activity (rides driven + reservations made)"""
+        employee_id = int(get_jwt_identity())
+        
+        # Get rides where employee is driver
+        rides_driven = Ride.query.filter_by(driver_id=employee_id).all()
+        
+        # Get reservations made by employee (join with Ride to get details)
+        reservations = Reservation.query.filter_by(employee_id=employee_id).all()
+        
+        # Build history items
+        history = []
+        
+        # Add rides driven
+        for ride in rides_driven:
+            history.append({
+                'type': 'DRIVER_RIDE',
+                'ride_id': ride.id,
+                'origin': ride.origin,
+                'destination': ride.destination,
+                'departure_time': ride.departure_time.isoformat() if ride.departure_time else None,
+                'status': ride.status
+            })
+        
+        # Add reservations (get ride details for each)
+        for reservation in reservations:
+            ride = Ride.query.get(reservation.ride_id)
+            if ride:
+                history.append({
+                    'type': 'RESERVATION',
+                    'ride_id': ride.id,
+                    'origin': ride.origin,
+                    'destination': ride.destination,
+                    'departure_time': ride.departure_time.isoformat() if ride.departure_time else None,
+                    'status': ride.status
+                })
+        
+        # Sort by departure_time (newest first)
+        history.sort(key=lambda x: x['departure_time'] if x['departure_time'] else '', reverse=True)
+        
+        return history
