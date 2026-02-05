@@ -27,6 +27,15 @@ ride_response = api.model('RideResponse', {
     'created_at': fields.DateTime(description='Creation timestamp')
 })
 
+# Paginated response model
+paginated_rides_response = api.model('PaginatedRidesResponse', {
+    'items': fields.List(fields.Nested(ride_response)),
+    'page': fields.Integer(description='Current page number'),
+    'per_page': fields.Integer(description='Items per page'),
+    'total_items': fields.Integer(description='Total number of items'),
+    'total_pages': fields.Integer(description='Total number of pages')
+})
+
 @api.route('/')
 class RideList(Resource):
     @jwt_required()
@@ -35,11 +44,13 @@ class RideList(Resource):
         'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False},
         'date_from': {'description': 'Filter rides from this date (ISO datetime)', 'type': 'string', 'required': False},
         'date_to': {'description': 'Filter rides up to this date (ISO datetime)', 'type': 'string', 'required': False},
-        'sort_by': {'description': 'Sort results: date_asc (default) or date_desc', 'type': 'string', 'required': False, 'enum': ['date_asc', 'date_desc']}
+        'sort_by': {'description': 'Sort results: date_asc (default) or date_desc', 'type': 'string', 'required': False, 'enum': ['date_asc', 'date_desc']},
+        'page': {'description': 'Page number (default: 1)', 'type': 'integer', 'required': False, 'default': 1},
+        'per_page': {'description': 'Items per page (default: 10, max: 50)', 'type': 'integer', 'required': False, 'default': 10}
     })
-    @api.marshal_list_with(ride_response)
+    @api.marshal_with(paginated_rides_response)
     def get(self):
-        """List all rides with optional filtering and sorting"""
+        """List all rides with optional filtering, sorting, and pagination"""
         query = Ride.query
 
         # Origin/destination filters
@@ -80,11 +91,31 @@ class RideList(Resource):
         if sort_by == 'date_desc':
             query = query.order_by(Ride.departure_time.desc())
         else:
-            # Default to date_asc
             query = query.order_by(Ride.departure_time.asc())
 
-        rides = query.all()
-        return rides
+        # Pagination parameters
+        try:
+            page = int(request.args.get('page', 1))
+            per_page = int(request.args.get('per_page', 10))
+        except ValueError:
+            api.abort(400, 'page and per_page must be integers')
+
+        # Validate pagination
+        if page < 1:
+            api.abort(400, 'page must be >= 1')
+        if per_page < 1 or per_page > 50:
+            api.abort(400, 'per_page must be between 1 and 50')
+
+        # Execute paginated query
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return {
+            'items': pagination.items,
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total_items': pagination.total,
+            'total_pages': pagination.pages
+        }
 
     @jwt_required()
     @api.doc('create_ride', security='Bearer')
