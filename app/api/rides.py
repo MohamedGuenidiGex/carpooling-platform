@@ -23,6 +23,7 @@ ride_response = api.model('RideResponse', {
     'destination': fields.String(description='Drop-off location'),
     'departure_time': fields.DateTime(description='Departure datetime (ISO)'),
     'available_seats': fields.Integer(description='Seats available'),
+    'status': fields.String(description='Ride status (ACTIVE/FULL)'),
     'created_at': fields.DateTime(description='Creation timestamp')
 })
 

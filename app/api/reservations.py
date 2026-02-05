@@ -1,6 +1,6 @@
 from flask import request
 from flask_restx import Namespace, Resource, fields
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.extensions import db
 from app.models import Reservation, Ride, Employee, Notification
@@ -54,7 +54,14 @@ class ReservationList(Resource):
         if ride.available_seats < seats_reserved:
             api.abort(400, 'Not enough available seats')
 
+        if ride.status == 'FULL':
+            api.abort(400, 'Ride is already full')
+
         ride.available_seats -= seats_reserved
+
+        # Mark ride as FULL if no seats left
+        if ride.available_seats == 0:
+            ride.status = 'FULL'
 
         reservation = Reservation(
             employee_id=employee.id,
@@ -74,6 +81,43 @@ class ReservationList(Resource):
         db.session.add(notification)
         db.session.commit()
         return reservation, 201
+
+
+@api.route('/<int:id>/cancel')
+@api.param('id', 'Reservation ID')
+class ReservationCancel(Resource):
+    @jwt_required()
+    @api.doc('cancel_reservation', security='Bearer', description='Cancel a reservation (only by creator). Sets status to CANCELLED and restores seats.')
+    @api.marshal_with(reservation_response)
+    def post(self, id):
+        """Cancel a reservation (only the creator can cancel)"""
+        employee_id = int(get_jwt_identity())
+        reservation = Reservation.query.get(id)
+        
+        if not reservation:
+            api.abort(404, 'Reservation not found')
+        
+        # Only creator can cancel
+        if reservation.employee_id != employee_id:
+            api.abort(403, 'Only the reservation creator can cancel it')
+        
+        # Already cancelled
+        if reservation.status == 'CANCELLED':
+            api.abort(400, 'Reservation is already cancelled')
+        
+        # Restore available seats
+        ride = Ride.query.get(reservation.ride_id)
+        if ride:
+            ride.available_seats += reservation.seats_reserved
+            # Mark ride as ACTIVE again if it was FULL
+            if ride.status == 'FULL':
+                ride.status = 'ACTIVE'
+        
+        # Set status to CANCELLED (don't delete)
+        reservation.status = 'CANCELLED'
+        db.session.commit()
+        
+        return reservation, 200
 
 
 @api.route('/<int:id>')
