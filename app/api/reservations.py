@@ -57,6 +57,9 @@ class ReservationList(Resource):
         if ride.status == 'FULL':
             api.abort(400, 'Ride is already full')
 
+        if ride.status == 'COMPLETED':
+            api.abort(400, 'Cannot book a completed ride')
+
         ride.available_seats -= seats_reserved
 
         # Mark ride as FULL if no seats left
