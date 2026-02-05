@@ -29,11 +29,25 @@ ride_response = api.model('RideResponse', {
 @api.route('/')
 class RideList(Resource):
     @jwt_required()
-    @api.doc('list_rides', security='Bearer')
+    @api.doc('list_rides', security='Bearer', params={
+        'origin': {'description': 'Filter by origin (partial match, case-insensitive)', 'type': 'string', 'required': False},
+        'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False}
+    })
     @api.marshal_list_with(ride_response)
     def get(self):
-        """List all rides"""
-        rides = Ride.query.all()
+        """List all rides or filter by origin/destination"""
+        query = Ride.query
+
+        origin = request.args.get('origin')
+        destination = request.args.get('destination')
+
+        if origin:
+            query = query.filter(Ride.origin.ilike(f'%{origin}%'))
+
+        if destination:
+            query = query.filter(Ride.destination.ilike(f'%{destination}%'))
+
+        rides = query.all()
         return rides
 
     @jwt_required()
