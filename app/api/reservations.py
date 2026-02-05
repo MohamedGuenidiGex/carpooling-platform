@@ -18,7 +18,7 @@ reservation_response = api.model('ReservationResponse', {
     'employee_id': fields.Integer(description='Employee ID of the rider'),
     'ride_id': fields.Integer(description='Ride ID reserved'),
     'seats_reserved': fields.Integer(description='Seats reserved'),
-    'status': fields.String(description='Reservation status'),
+    'status': fields.String(description='Reservation status (PENDING/CONFIRMED/CANCELLED/REJECTED)'),
     'created_at': fields.DateTime(description='Creation timestamp')
 })
 
@@ -33,11 +33,11 @@ class ReservationList(Resource):
         return reservations
 
     @jwt_required()
-    @api.doc('create_reservation', security='Bearer', description='Book a seat on a ride. Validates: no duplicate active bookings, sufficient seats available.')
+    @api.doc('create_reservation', security='Bearer', description='Request a seat on a ride. Creates PENDING reservation. Driver must approve.')
     @api.expect(reservation_create)
     @api.marshal_with(reservation_response)
     def post(self):
-        """Book a seat on a ride with validation and atomic transaction"""
+        """Request a seat on a ride (creates PENDING reservation, driver approval required)"""
         data = request.get_json() or {}
         seats_reserved = data.get('seats_reserved', 1)
         
@@ -51,78 +51,72 @@ class ReservationList(Resource):
         if not ride_id or not employee_id:
             api.abort(400, 'ride_id and employee_id are required')
 
-        # Atomic transaction - all or nothing
         try:
-            # Use database lock to prevent race conditions
-            ride = Ride.query.with_for_update().get(ride_id)
+            ride = Ride.query.get(ride_id)
             if not ride:
-                db.session.rollback()
                 api.abort(404, 'Ride not found')
 
-            # Check duplicate active reservation
+            # Check duplicate active reservation (PENDING or CONFIRMED)
             existing_reservation = Reservation.query.filter_by(
                 employee_id=employee_id,
                 ride_id=ride_id
-            ).filter(Reservation.status != 'CANCELLED').first()
+            ).filter(Reservation.status.in_(['PENDING', 'CONFIRMED'])).first()
             
             if existing_reservation:
-                db.session.rollback()
                 api.abort(400, 'You already have an active reservation for this ride')
 
             # Validate ride status
             if ride.status == 'COMPLETED':
-                db.session.rollback()
                 api.abort(400, 'Cannot book a completed ride')
             
             if ride.status == 'FULL':
-                db.session.rollback()
                 api.abort(400, 'Ride is already full')
 
-            # Strict seat enforcement
+            # Strict seat enforcement (check if seats would be available if approved)
             if seats_reserved > ride.available_seats:
-                db.session.rollback()
                 api.abort(400, f'Not enough seats available. Requested: {seats_reserved}, Available: {ride.available_seats}')
 
-            # Update ride seats
-            ride.available_seats -= seats_reserved
-            
-            # Mark ride as FULL if no seats left
-            if ride.available_seats == 0:
-                ride.status = 'FULL'
-
-            # Create reservation
+            # Create reservation with PENDING status (no seat deduction yet)
             reservation = Reservation(
                 employee_id=employee_id,
                 ride_id=ride.id,
                 seats_reserved=seats_reserved,
-                status='CONFIRMED'
+                status='PENDING'
             )
             db.session.add(reservation)
             db.session.flush()
 
-            # Create notification
+            # Create notification for the requesting employee
             notification = Notification(
                 employee_id=employee_id,
                 ride_id=ride.id,
-                message=f'Reservation confirmed for {ride.origin} → {ride.destination} (Ride #{ride.id})',
+                message=f'Reservation request pending for {ride.origin} → {ride.destination} (Ride #{ride.id}). Waiting for driver approval.',
                 is_read=False
             )
             db.session.add(notification)
             
-            # Commit all changes atomically
+            # Create notification for the driver
+            driver_notification = Notification(
+                employee_id=ride.driver_id,
+                ride_id=ride.id,
+                message=f'New reservation request for your ride {ride.origin} → {ride.destination} (Ride #{ride.id}). Employee #{employee_id} requested {seats_reserved} seat(s).',
+                is_read=False
+            )
+            db.session.add(driver_notification)
+            
             db.session.commit()
             return reservation, 201
             
         except Exception as e:
             db.session.rollback()
-            api.abort(500, f'Booking failed: {str(e)}')
+            api.abort(500, f'Booking request failed: {str(e)}')
 
 
 @api.route('/<int:id>/cancel')
 @api.param('id', 'Reservation ID')
 class ReservationCancel(Resource):
     @jwt_required()
-    @api.doc('cancel_reservation', security='Bearer', description='Cancel a reservation (only by creator). Sets status to CANCELLED and restores seats.')
+    @api.doc('cancel_reservation', security='Bearer', description='Cancel a reservation (only by creator). Sets status to CANCELLED and restores seats (only if CONFIRMED).')
     @api.marshal_with(reservation_response)
     def post(self, id):
         """Cancel a reservation (only the creator can cancel)"""
@@ -136,23 +130,126 @@ class ReservationCancel(Resource):
         if reservation.employee_id != employee_id:
             api.abort(403, 'Only the reservation creator can cancel it')
         
-        # Already cancelled
-        if reservation.status == 'CANCELLED':
-            api.abort(400, 'Reservation is already cancelled')
+        # Already cancelled or rejected
+        if reservation.status in ['CANCELLED', 'REJECTED']:
+            api.abort(400, f'Reservation is already {reservation.status.lower()}')
         
-        # Restore available seats
-        ride = Ride.query.get(reservation.ride_id)
-        if ride:
-            ride.available_seats += reservation.seats_reserved
-            # Mark ride as ACTIVE again if it was FULL
-            if ride.status == 'FULL':
-                ride.status = 'ACTIVE'
+        # Restore available seats only if reservation was CONFIRMED
+        if reservation.status == 'CONFIRMED':
+            ride = Ride.query.get(reservation.ride_id)
+            if ride:
+                ride.available_seats += reservation.seats_reserved
+                # Mark ride as ACTIVE again if it was FULL
+                if ride.status == 'FULL':
+                    ride.status = 'ACTIVE'
         
         # Set status to CANCELLED (don't delete)
         reservation.status = 'CANCELLED'
         db.session.commit()
         
         return reservation, 200
+
+
+@api.route('/<int:id>/approve')
+@api.param('id', 'Reservation ID')
+class ReservationApprove(Resource):
+    @jwt_required()
+    @api.doc('approve_reservation', security='Bearer', description='Approve a PENDING reservation (driver only). Deducts seats and sets status to CONFIRMED.')
+    @api.marshal_with(reservation_response)
+    def patch(self, id):
+        """Approve a reservation (only the ride driver can approve)"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            # Get reservation with ride locked for update
+            reservation = Reservation.query.get(id)
+            if not reservation:
+                api.abort(404, 'Reservation not found')
+            
+            ride = Ride.query.with_for_update().get(reservation.ride_id)
+            
+            # Only driver can approve
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can approve reservations')
+            
+            # Can only approve PENDING reservations
+            if reservation.status != 'PENDING':
+                api.abort(400, f'Cannot approve reservation with status: {reservation.status}')
+            
+            # Check seat availability again
+            if reservation.seats_reserved > ride.available_seats:
+                api.abort(400, f'Not enough seats available. Required: {reservation.seats_reserved}, Available: {ride.available_seats}')
+            
+            # Deduct seats
+            ride.available_seats -= reservation.seats_reserved
+            
+            # Mark ride as FULL if no seats left
+            if ride.available_seats == 0:
+                ride.status = 'FULL'
+            
+            # Update reservation status
+            reservation.status = 'CONFIRMED'
+            
+            # Create notification for the employee
+            notification = Notification(
+                employee_id=reservation.employee_id,
+                ride_id=ride.id,
+                message=f'Reservation APPROVED for {ride.origin} → {ride.destination} (Ride #{ride.id}). {reservation.seats_reserved} seat(s) confirmed.',
+                is_read=False
+            )
+            db.session.add(notification)
+            
+            db.session.commit()
+            return reservation, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Approval failed: {str(e)}')
+
+
+@api.route('/<int:id>/reject')
+@api.param('id', 'Reservation ID')
+class ReservationReject(Resource):
+    @jwt_required()
+    @api.doc('reject_reservation', security='Bearer', description='Reject a PENDING reservation (driver only). Sets status to REJECTED. No seat changes.')
+    @api.marshal_with(reservation_response)
+    def patch(self, id):
+        """Reject a reservation (only the ride driver can reject)"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            reservation = Reservation.query.get(id)
+            if not reservation:
+                api.abort(404, 'Reservation not found')
+            
+            ride = Ride.query.get(reservation.ride_id)
+            
+            # Only driver can reject
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can reject reservations')
+            
+            # Can only reject PENDING reservations
+            if reservation.status != 'PENDING':
+                api.abort(400, f'Cannot reject reservation with status: {reservation.status}')
+            
+            # Update reservation status (no seat changes)
+            reservation.status = 'REJECTED'
+            
+            # Create notification for the employee
+            notification = Notification(
+                employee_id=reservation.employee_id,
+                ride_id=ride.id,
+                message=f'Reservation REJECTED for {ride.origin} → {ride.destination} (Ride #{ride.id}). Please find another ride.',
+                is_read=False
+            )
+            db.session.add(notification)
+            
+            db.session.commit()
+            return reservation, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Rejection failed: {str(e)}')
 
 
 @api.route('/<int:id>')
