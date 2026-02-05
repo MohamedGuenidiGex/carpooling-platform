@@ -33,57 +33,89 @@ class ReservationList(Resource):
         return reservations
 
     @jwt_required()
-    @api.doc('create_reservation', security='Bearer')
+    @api.doc('create_reservation', security='Bearer', description='Book a seat on a ride. Validates: no duplicate active bookings, sufficient seats available.')
     @api.expect(reservation_create)
     @api.marshal_with(reservation_response)
     def post(self):
-        """Book a seat on a ride"""
+        """Book a seat on a ride with validation and atomic transaction"""
         data = request.get_json() or {}
         seats_reserved = data.get('seats_reserved', 1)
-        if seats_reserved <= 0:
-            api.abort(400, 'seats_reserved must be greater than 0')
+        
+        # Validate seats_reserved
+        if not isinstance(seats_reserved, int) or seats_reserved <= 0:
+            api.abort(400, 'seats_reserved must be a positive integer greater than 0')
 
-        ride = Ride.query.get(data.get('ride_id'))
-        if not ride:
-            api.abort(404, 'Ride not found')
+        ride_id = data.get('ride_id')
+        employee_id = data.get('employee_id')
+        
+        if not ride_id or not employee_id:
+            api.abort(400, 'ride_id and employee_id are required')
 
-        employee = Employee.query.get(data.get('employee_id'))
-        if not employee:
-            api.abort(404, 'Employee not found')
+        # Atomic transaction - all or nothing
+        try:
+            # Use database lock to prevent race conditions
+            ride = Ride.query.with_for_update().get(ride_id)
+            if not ride:
+                db.session.rollback()
+                api.abort(404, 'Ride not found')
 
-        if ride.available_seats < seats_reserved:
-            api.abort(400, 'Not enough available seats')
+            # Check duplicate active reservation
+            existing_reservation = Reservation.query.filter_by(
+                employee_id=employee_id,
+                ride_id=ride_id
+            ).filter(Reservation.status != 'CANCELLED').first()
+            
+            if existing_reservation:
+                db.session.rollback()
+                api.abort(400, 'You already have an active reservation for this ride')
 
-        if ride.status == 'FULL':
-            api.abort(400, 'Ride is already full')
+            # Validate ride status
+            if ride.status == 'COMPLETED':
+                db.session.rollback()
+                api.abort(400, 'Cannot book a completed ride')
+            
+            if ride.status == 'FULL':
+                db.session.rollback()
+                api.abort(400, 'Ride is already full')
 
-        if ride.status == 'COMPLETED':
-            api.abort(400, 'Cannot book a completed ride')
+            # Strict seat enforcement
+            if seats_reserved > ride.available_seats:
+                db.session.rollback()
+                api.abort(400, f'Not enough seats available. Requested: {seats_reserved}, Available: {ride.available_seats}')
 
-        ride.available_seats -= seats_reserved
+            # Update ride seats
+            ride.available_seats -= seats_reserved
+            
+            # Mark ride as FULL if no seats left
+            if ride.available_seats == 0:
+                ride.status = 'FULL'
 
-        # Mark ride as FULL if no seats left
-        if ride.available_seats == 0:
-            ride.status = 'FULL'
+            # Create reservation
+            reservation = Reservation(
+                employee_id=employee_id,
+                ride_id=ride.id,
+                seats_reserved=seats_reserved,
+                status='CONFIRMED'
+            )
+            db.session.add(reservation)
+            db.session.flush()
 
-        reservation = Reservation(
-            employee_id=employee.id,
-            ride_id=ride.id,
-            seats_reserved=seats_reserved,
-            status='CONFIRMED'
-        )
-        db.session.add(reservation)
-        db.session.flush()
-
-        notification = Notification(
-            employee_id=employee.id,
-            ride_id=ride.id,
-            message=f'Reservation confirmed for {ride.origin} → {ride.destination} (Ride #{ride.id})',
-            is_read=False
-        )
-        db.session.add(notification)
-        db.session.commit()
-        return reservation, 201
+            # Create notification
+            notification = Notification(
+                employee_id=employee_id,
+                ride_id=ride.id,
+                message=f'Reservation confirmed for {ride.origin} → {ride.destination} (Ride #{ride.id})',
+                is_read=False
+            )
+            db.session.add(notification)
+            
+            # Commit all changes atomically
+            db.session.commit()
+            return reservation, 201
+            
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Booking failed: {str(e)}')
 
 
 @api.route('/<int:id>/cancel')
