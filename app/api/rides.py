@@ -32,13 +32,17 @@ class RideList(Resource):
     @jwt_required()
     @api.doc('list_rides', security='Bearer', params={
         'origin': {'description': 'Filter by origin (partial match, case-insensitive)', 'type': 'string', 'required': False},
-        'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False}
+        'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False},
+        'date_from': {'description': 'Filter rides from this date (ISO datetime)', 'type': 'string', 'required': False},
+        'date_to': {'description': 'Filter rides up to this date (ISO datetime)', 'type': 'string', 'required': False},
+        'sort_by': {'description': 'Sort results: date_asc (default) or date_desc', 'type': 'string', 'required': False, 'enum': ['date_asc', 'date_desc']}
     })
     @api.marshal_list_with(ride_response)
     def get(self):
-        """List all rides or filter by origin/destination"""
+        """List all rides with optional filtering and sorting"""
         query = Ride.query
 
+        # Origin/destination filters
         origin = request.args.get('origin')
         destination = request.args.get('destination')
 
@@ -47,6 +51,37 @@ class RideList(Resource):
 
         if destination:
             query = query.filter(Ride.destination.ilike(f'%{destination}%'))
+
+        # Date range filters
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+
+        if date_from:
+            try:
+                date_from_dt = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                query = query.filter(Ride.departure_time >= date_from_dt)
+            except ValueError:
+                api.abort(400, 'Invalid date_from format. Use ISO datetime (e.g., 2026-02-10T10:00:00)')
+
+        if date_to:
+            try:
+                date_to_dt = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                query = query.filter(Ride.departure_time <= date_to_dt)
+            except ValueError:
+                api.abort(400, 'Invalid date_to format. Use ISO datetime (e.g., 2026-02-10T10:00:00)')
+
+        # Validate date range
+        if date_from and date_to:
+            if datetime.fromisoformat(date_from.replace('Z', '+00:00')) > datetime.fromisoformat(date_to.replace('Z', '+00:00')):
+                api.abort(400, 'date_from cannot be later than date_to')
+
+        # Sorting
+        sort_by = request.args.get('sort_by', 'date_asc')
+        if sort_by == 'date_desc':
+            query = query.order_by(Ride.departure_time.desc())
+        else:
+            # Default to date_asc
+            query = query.order_by(Ride.departure_time.asc())
 
         rides = query.all()
         return rides
