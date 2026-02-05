@@ -36,25 +36,9 @@ def configure_error_handlers(api):
         
         return {'error': error_code, 'message': message}, code
     
-    @api.errorhandler(400)
-    def handle_400(error):
-        return {'error': 'VALIDATION_ERROR', 'message': str(getattr(error, 'description', str(error)))}, 400
-    
-    @api.errorhandler(401)
-    def handle_401(error):
-        return {'error': 'UNAUTHORIZED', 'message': str(getattr(error, 'description', 'Authentication required'))}, 401
-    
-    @api.errorhandler(403)
-    def handle_403(error):
-        return {'error': 'FORBIDDEN', 'message': str(getattr(error, 'description', 'Access denied'))}, 403
-    
-    @api.errorhandler(404)
-    def handle_404(error):
-        return {'error': 'NOT_FOUND', 'message': str(getattr(error, 'description', 'Resource not found'))}, 404
-    
-    @api.errorhandler(500)
-    def handle_500(error):
-        return {'error': 'INTERNAL_ERROR', 'message': str(getattr(error, 'description', 'Internal server error'))}, 500
+    @api.errorhandler(ValueError)
+    def handle_value_error(error):
+        return {'error': 'VALIDATION_ERROR', 'message': str(error)}, 400
 
 api = Api(
     title="Gexpertise Smart Carpooling API",
