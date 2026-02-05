@@ -27,6 +27,14 @@ ride_response = api.model('RideResponse', {
     'created_at': fields.DateTime(description='Creation timestamp')
 })
 
+participant_response = api.model('ParticipantResponse', {
+    'employee_id': fields.Integer(description='Employee ID'),
+    'name': fields.String(description='Employee name'),
+    'email': fields.String(description='Employee email'),
+    'seats_reserved': fields.Integer(description='Seats reserved by this employee'),
+    'reservation_status': fields.String(description='Reservation status (CONFIRMED)')
+})
+
 # Paginated response model
 paginated_rides_response = api.model('PaginatedRidesResponse', {
     'items': fields.List(fields.Nested(ride_response)),
@@ -238,3 +246,47 @@ class RideComplete(Resource):
         ride.status = 'COMPLETED'
         db.session.commit()
         return ride
+
+
+@api.route('/<int:id>/participants')
+@api.param('id', 'Ride ID')
+class RideParticipants(Resource):
+    @jwt_required()
+    @api.doc('list_participants', security='Bearer', description='Get list of participants in a ride (driver only)')
+    @api.marshal_with(participant_response)
+    def get(self, id):
+        """List ride participants (only the driver can access)"""
+        employee_id = int(get_jwt_identity())
+        ride = Ride.query.get(id)
+        
+        if not ride:
+            api.abort(404, 'Ride not found')
+        
+        # Only driver can view participants
+        if ride.driver_id != employee_id:
+            api.abort(403, 'Only the ride driver can view participants')
+        
+        # Join Employee, Reservation, and Ride tables to get participants
+        participants = db.session.query(
+            Employee.id.label('employee_id'),
+            Employee.name,
+            Employee.email,
+            Reservation.seats_reserved,
+            Reservation.status.label('reservation_status')
+        ).join(
+            Reservation, Employee.id == Reservation.employee_id
+        ).filter(
+            Reservation.ride_id == id,
+            Reservation.status != 'CANCELLED'
+        ).all()
+        
+        return [
+            {
+                'employee_id': p.employee_id,
+                'name': p.name,
+                'email': p.email,
+                'seats_reserved': p.seats_reserved,
+                'reservation_status': p.reservation_status
+            }
+            for p in participants
+        ]
