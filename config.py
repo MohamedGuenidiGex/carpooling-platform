@@ -23,8 +23,23 @@ class ProductionConfig(Config):
     DEBUG = False
 
 class TestingConfig(Config):
-    SQLALCHEMY_DATABASE_URI = os.environ.get('TEST_DATABASE_URL')
+    """Configuration for testing environment."""
+    # Use in-memory SQLite for fast, isolated tests
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     TESTING = True
+    DEBUG = False
+    
+    # Use a test-specific JWT secret
+    JWT_SECRET_KEY = 'test-secret-key-do-not-use-in-production'
+    
+    # Speed up password hashing for tests
+    BCRYPT_LOG_ROUNDS = 4
+    
+    # Disable CSRF for testing
+    WTF_CSRF_ENABLED = False
+    
+    # Preserve context for test debugging
+    PRESERVE_CONTEXT_ON_EXCEPTION = False
 
 config_by_name = {
     'development': DevelopmentConfig,
