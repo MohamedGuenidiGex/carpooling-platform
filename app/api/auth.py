@@ -4,6 +4,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 
 from app.extensions import db
 from app.models import Employee
+from app.utils.logger import log_action
 
 api = Namespace('auth', description='Authentication operations')
 
@@ -120,6 +121,13 @@ class Login(Resource):
                 'name': employee.name,
                 'department': employee.department
             }
+        )
+
+        # Log successful login
+        log_action(
+            action='USER_LOGIN',
+            employee_id=employee.id,
+            details={'email': employee.email}
         )
 
         return {

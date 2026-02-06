@@ -5,6 +5,7 @@ from datetime import datetime
 
 from app.extensions import db
 from app.models import Ride, Employee, Reservation
+from app.utils.logger import log_action
 
 api = Namespace('rides', description='Ride operations')
 
@@ -166,6 +167,14 @@ class RideList(Resource):
         )
         db.session.add(ride)
         db.session.commit()
+
+        # Log ride creation
+        log_action(
+            action='RIDE_CREATED',
+            employee_id=data['driver_id'],
+            details={'ride_id': ride.id, 'origin': ride.origin, 'destination': ride.destination}
+        )
+
         return ride, 201
 
 

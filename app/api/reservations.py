@@ -4,6 +4,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.extensions import db
 from app.models import Reservation, Ride, Employee, Notification
+from app.utils.logger import log_action
 
 api = Namespace('reservations', description='Reservation operations')
 
@@ -123,6 +124,14 @@ class ReservationList(Resource):
             db.session.add(driver_notification)
             
             db.session.commit()
+
+            # Log reservation creation
+            log_action(
+                action='RESERVATION_CREATED',
+                employee_id=employee_id,
+                details={'reservation_id': reservation.id, 'ride_id': ride_id, 'seats_reserved': seats_reserved, 'status': 'PENDING'}
+            )
+
             return reservation, 201
             
         except Exception as e:
@@ -172,6 +181,13 @@ class ReservationCancel(Resource):
         # Set status to CANCELLED (don't delete)
         reservation.status = 'CANCELLED'
         db.session.commit()
+
+        # Log reservation cancellation
+        log_action(
+            action='RESERVATION_CANCELLED',
+            employee_id=employee_id,
+            details={'reservation_id': reservation.id, 'ride_id': reservation.ride_id, 'seats_reserved': reservation.seats_reserved}
+        )
         
         return reservation, 200
 
@@ -234,6 +250,14 @@ class ReservationApprove(Resource):
             db.session.add(notification)
             
             db.session.commit()
+
+            # Log reservation approval
+            log_action(
+                action='RESERVATION_APPROVED',
+                employee_id=employee_id,
+                details={'reservation_id': reservation.id, 'ride_id': ride.id, 'seats_reserved': reservation.seats_reserved}
+            )
+
             return reservation, 200
             
         except Exception as e:
@@ -287,6 +311,14 @@ class ReservationReject(Resource):
             db.session.add(notification)
             
             db.session.commit()
+
+            # Log reservation rejection
+            log_action(
+                action='RESERVATION_REJECTED',
+                employee_id=employee_id,
+                details={'reservation_id': reservation.id, 'ride_id': ride.id, 'seats_reserved': reservation.seats_reserved}
+            )
+
             return reservation, 200
             
         except Exception as e:
