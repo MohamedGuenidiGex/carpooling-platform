@@ -95,6 +95,7 @@ class NotificationRead(Resource):
     @api.doc('mark_notification_read', security='Bearer',
         responses={
             401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Not authorized', error_response),
             404: ('Notification not found', error_response),
             500: ('Internal server error', error_response)
         }
@@ -102,10 +103,18 @@ class NotificationRead(Resource):
     @api.marshal_with(notification_read_response)
     def patch(self, notification_id):
         """Mark a notification as read"""
+        from flask_jwt_extended import get_jwt_identity
+        
+        employee_id = int(get_jwt_identity())
         notification = Notification.query.get(notification_id)
+        
         if not notification:
             api.abort(404, 'Notification not found')
-
+        
+        # Only the owner can mark their notification as read
+        if notification.employee_id != employee_id:
+            api.abort(403, 'Not authorized to access this notification')
+        
         notification.is_read = True
         db.session.commit()
         return notification
