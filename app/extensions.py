@@ -31,6 +31,16 @@ def configure_error_handlers(api):
     
     def custom_handle_error(error):
         """Custom error handler that returns standardized format."""
+        # Check if it's a JWT-related error (has status_code from Flask-JWT-Extended)
+        if hasattr(error, 'status_code') and error.status_code == 401:
+            message = str(getattr(error, 'message', 'Authentication required'))
+            return {'error': 'UNAUTHORIZED', 'message': message}, 401
+        
+        # Check if it's a Flask-JWT-Extended NoAuthorizationError
+        if hasattr(error, 'error') and 'Missing' in str(getattr(error, 'message', '')):
+            message = str(getattr(error, 'message', 'Missing Authorization Header'))
+            return {'error': 'UNAUTHORIZED', 'message': message}, 401
+        
         # Get error code from HTTPException
         if isinstance(error, HTTPException):
             code = error.code
@@ -38,6 +48,10 @@ def configure_error_handlers(api):
         elif hasattr(error, 'code'):
             code = error.code
             message = str(getattr(error, 'description', str(error)))
+        elif hasattr(error, 'status_code'):
+            # Handle Flask-JWT-Extended errors
+            code = error.status_code
+            message = str(getattr(error, 'message', str(error)))
         else:
             # Fall back to original handler for non-HTTP exceptions
             return original_handle_error(error)

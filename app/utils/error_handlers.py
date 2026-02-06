@@ -1,6 +1,7 @@
 """Centralized error handlers for standardized API error responses."""
+import logging
 from flask import jsonify
-from werkzeug.exceptions import BadRequest, NotFound, Unauthorized, Forbidden, InternalServerError
+from werkzeug.exceptions import BadRequest, NotFound, Unauthorized, Forbidden, InternalServerError, HTTPException
 
 # Error code mapping
 ERROR_CODES = {
@@ -66,7 +67,14 @@ def register_error_handlers(app):
     @app.errorhandler(Exception)
     def handle_exception(e):
         """Handle any unhandled exceptions."""
-        if hasattr(e, 'code'):
-            # If it's an HTTP exception we already handle, let it pass
+        # Log the exception for debugging
+        logger = logging.getLogger('carpooling')
+        logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
+        
+        # If it's an HTTP exception we already handle, let it pass through
+        if isinstance(e, HTTPException):
+            # Re-raise to let Flask-RESTX handle it
             raise e
-        return make_error_response('INTERNAL_ERROR', str(e), 500)
+        
+        # Return standardized internal error response
+        return make_error_response('INTERNAL_ERROR', 'Unexpected server error', 500)

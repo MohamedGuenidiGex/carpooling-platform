@@ -1,6 +1,7 @@
 from flask import request
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from werkzeug.exceptions import HTTPException
 
 from app.extensions import db
 from app.models import Reservation, Ride, Employee, Notification
@@ -134,6 +135,9 @@ class ReservationList(Resource):
 
             return reservation, 201
             
+        except HTTPException:
+            # Re-raise HTTP exceptions (400, 403, 404) without modification
+            raise
         except Exception as e:
             db.session.rollback()
             api.abort(500, f'Booking request failed: {str(e)}')
@@ -260,6 +264,9 @@ class ReservationApprove(Resource):
 
             return reservation, 200
             
+        except HTTPException:
+            # Re-raise HTTP exceptions (403, 404, 400) without modification
+            raise
         except Exception as e:
             db.session.rollback()
             api.abort(500, f'Approval failed: {str(e)}')
@@ -321,6 +328,9 @@ class ReservationReject(Resource):
 
             return reservation, 200
             
+        except HTTPException:
+            # Re-raise HTTP exceptions (403, 404, 400) without modification
+            raise
         except Exception as e:
             db.session.rollback()
             api.abort(500, f'Rejection failed: {str(e)}')

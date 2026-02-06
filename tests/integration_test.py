@@ -345,7 +345,9 @@ def scenario_2_error_handling():
         if reservation:
             # Employee B tries to approve their own reservation (should fail)
             url = f"{BASE_URL}/reservations/{reservation['id']}/approve"
-            response = requests.patch(url, headers=headers)
+            # Use token_b (passenger token) to try to approve - should be rejected with 403
+            headers_b = {"Authorization": f"Bearer {token_b}"}
+            response = requests.patch(url, headers=headers_b)
             passed = print_result("Unauthorized Approval Rejected", response.status_code == 403)
             all_passed = all_passed and passed
     
