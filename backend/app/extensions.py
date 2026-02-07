@@ -3,6 +3,7 @@ from flask_restx import Api
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
+from flask_jwt_extended.exceptions import NoAuthorizationError
 from werkzeug.exceptions import HTTPException
 
 authorizations = {
@@ -32,14 +33,13 @@ def configure_error_handlers(api):
     
     def custom_handle_error(error):
         """Custom error handler that returns standardized format."""
+        # Check if it's a NoAuthorizationError from Flask-JWT-Extended
+        if isinstance(error, NoAuthorizationError):
+            return {'error': 'UNAUTHORIZED', 'message': 'Missing Authorization Header'}, 401
+        
         # Check if it's a JWT-related error (has status_code from Flask-JWT-Extended)
         if hasattr(error, 'status_code') and error.status_code == 401:
             message = str(getattr(error, 'message', 'Authentication required'))
-            return {'error': 'UNAUTHORIZED', 'message': message}, 401
-        
-        # Check if it's a Flask-JWT-Extended NoAuthorizationError
-        if hasattr(error, 'error') and 'Missing' in str(getattr(error, 'message', '')):
-            message = str(getattr(error, 'message', 'Missing Authorization Header'))
             return {'error': 'UNAUTHORIZED', 'message': message}, 401
         
         # Get error code from HTTPException
