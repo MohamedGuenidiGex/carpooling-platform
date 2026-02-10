@@ -57,11 +57,13 @@ class ApiClient {
     try {
       debugPrint('Testing connectivity to /rides/');
       final response = await get('/rides/');
-      debugPrint('Connectivity test SUCCESS: ');
+      debugPrint('Connectivity test SUCCESS: $response');
     } on ApiException catch (e) {
-      debugPrint('Connectivity test FAILED:  (status: )');
+      debugPrint(
+        'Connectivity test FAILED: ${e.message} (status: ${e.statusCode})',
+      );
     } catch (e) {
-      debugPrint('Connectivity test ERROR: ');
+      debugPrint('Connectivity test ERROR: $e');
     }
   }
 
