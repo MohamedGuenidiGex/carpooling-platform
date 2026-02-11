@@ -60,6 +60,7 @@ class RideList(Resource):
             'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False},
             'date_from': {'description': 'Filter rides from this date (ISO datetime)', 'type': 'string', 'required': False},
             'date_to': {'description': 'Filter rides up to this date (ISO datetime)', 'type': 'string', 'required': False},
+            'driver_id': {'description': 'Filter by driver ID (for getting my offered rides)', 'type': 'integer', 'required': False},
             'sort_by': {'description': 'Sort results: date_asc (default) or date_desc', 'type': 'string', 'required': False, 'enum': ['date_asc', 'date_desc']},
             'page': {'description': 'Page number (default: 1)', 'type': 'integer', 'required': False, 'default': 1},
             'per_page': {'description': 'Items per page (default: 10, max: 50)', 'type': 'integer', 'required': False, 'default': 10}
@@ -84,6 +85,14 @@ class RideList(Resource):
 
         if destination:
             query = query.filter(Ride.destination.ilike(f'%{destination}%'))
+
+        # Driver filter (for getting my offered rides)
+        driver_id = request.args.get('driver_id')
+        if driver_id:
+            try:
+                query = query.filter(Ride.driver_id == int(driver_id))
+            except ValueError:
+                api.abort(400, 'driver_id must be an integer')
 
         # Date range filters
         date_from = request.args.get('date_from')
@@ -155,11 +164,15 @@ class RideList(Resource):
         data = request.get_json()
         if data.get('available_seats', 0) <= 0:
             api.abort(400, 'available_seats must be greater than 0')
-        driver = Employee.query.get(data['driver_id'])
+        
+        # Get driver_id from JWT token instead of request body
+        driver_id = int(get_jwt_identity())
+        driver = Employee.query.get(driver_id)
         if not driver:
             api.abort(404, 'Driver not found')
+        
         ride = Ride(
-            driver_id=data['driver_id'],
+            driver_id=driver_id,
             origin=data['origin'],
             destination=data['destination'],
             departure_time=datetime.fromisoformat(data['departure_time']),
@@ -171,7 +184,7 @@ class RideList(Resource):
         # Log ride creation
         log_action(
             action='RIDE_CREATED',
-            employee_id=data['driver_id'],
+            employee_id=driver_id,
             details={'ride_id': ride.id, 'origin': ride.origin, 'destination': ride.destination}
         )
 

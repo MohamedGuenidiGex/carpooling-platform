@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 /// Enterprise-grade color system with exact design tokens
 class BrandColors {
   static const Color primaryRed = Color(0xFFB00020);
+  static const Color darkRed = Color(0xFF8B0016);
   static const Color black = Color(0xFF000000);
   static const Color darkGray = Color(0xFF444444);
   static const Color mediumGray = Color(0xFF666666);

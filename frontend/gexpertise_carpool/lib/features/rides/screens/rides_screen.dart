@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../../../core/widgets/gexpertise_drawer.dart';
+import 'find_ride_screen.dart';
 import 'offer_ride_screen.dart';
 
 /// Rides Screen - Premium Dashboard for Carpooling
@@ -40,7 +41,12 @@ class RidesScreen extends StatelessWidget {
                 _PremiumActionButton(
                   label: 'FIND A RIDE',
                   onPressed: () {
-                    // TODO: Navigate to find ride screen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const FindRideScreen(),
+                      ),
+                    );
                   },
                 ),
                 const SizedBox(height: 20),

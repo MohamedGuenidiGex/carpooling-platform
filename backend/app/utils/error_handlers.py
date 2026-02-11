@@ -2,6 +2,7 @@
 import logging
 from flask import jsonify
 from werkzeug.exceptions import BadRequest, NotFound, Unauthorized, Forbidden, InternalServerError, HTTPException
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 # Error code mapping
 ERROR_CODES = {
@@ -51,6 +52,14 @@ def handle_internal_error(e):
     message = str(e.description) if hasattr(e, 'description') else 'Internal server error'
     return make_error_response(error_code, message, 500)
 
+def handle_jwt_expired(e):
+    """Handle JWT expired signature errors."""
+    return make_error_response('UNAUTHORIZED', 'Token has expired. Please login again.', 401)
+
+def handle_jwt_invalid(e):
+    """Handle JWT invalid token errors."""
+    return make_error_response('UNAUTHORIZED', 'Invalid authentication token.', 401)
+
 def register_error_handlers(app):
     """Register all error handlers with Flask app."""
     app.register_error_handler(BadRequest, handle_bad_request)
@@ -62,6 +71,10 @@ def register_error_handlers(app):
     app.register_error_handler(404, handle_not_found)
     app.register_error_handler(InternalServerError, handle_internal_error)
     app.register_error_handler(500, handle_internal_error)
+    
+    # Register JWT error handlers
+    app.register_error_handler(ExpiredSignatureError, handle_jwt_expired)
+    app.register_error_handler(InvalidTokenError, handle_jwt_invalid)
     
     # Handle generic exceptions
     @app.errorhandler(Exception)

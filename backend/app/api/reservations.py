@@ -34,6 +34,9 @@ reservation_response = api.model('ReservationResponse', {
 class ReservationList(Resource):
     @jwt_required()
     @api.doc('list_reservations', security='Bearer',
+        params={
+            'employee_id': {'description': 'Filter by employee ID (for getting my bookings)', 'type': 'integer', 'required': False}
+        },
         responses={
             401: ('Unauthorized - JWT required', error_response),
             500: ('Internal server error', error_response)
@@ -41,8 +44,18 @@ class ReservationList(Resource):
     )
     @api.marshal_list_with(reservation_response)
     def get(self):
-        """List all reservations"""
-        reservations = Reservation.query.all()
+        """List all reservations with optional filtering"""
+        query = Reservation.query
+
+        # Employee filter (for getting my bookings)
+        employee_id = request.args.get('employee_id')
+        if employee_id:
+            try:
+                query = query.filter(Reservation.employee_id == int(employee_id))
+            except ValueError:
+                api.abort(400, 'employee_id must be an integer')
+
+        reservations = query.all()
         return reservations
 
     @jwt_required()
@@ -66,10 +79,11 @@ class ReservationList(Resource):
             api.abort(400, 'seats_reserved must be a positive integer greater than 0')
 
         ride_id = data.get('ride_id')
-        employee_id = data.get('employee_id')
+        # Get employee_id from JWT token instead of request body
+        employee_id = int(get_jwt_identity())
         
-        if not ride_id or not employee_id:
-            api.abort(400, 'ride_id and employee_id are required')
+        if not ride_id:
+            api.abort(400, 'ride_id is required')
 
         try:
             ride = Ride.query.get(ride_id)

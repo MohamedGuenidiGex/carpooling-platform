@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/brand_colors.dart';
+import '../providers/ride_provider.dart';
 
 /// Offer a Ride Screen - Premium Ride Creation Form
 ///
@@ -92,7 +94,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     }
   }
 
-  void _publishRide() {
+  Future<void> _publishRide() async {
     // Validate form
     if (_originController.text.trim().isEmpty ||
         _destinationController.text.trim().isEmpty ||
@@ -107,27 +109,78 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       return;
     }
 
-    // Print data to console (backend integration next)
-    final rideData = {
-      'origin': _originController.text.trim(),
-      'destination': _destinationController.text.trim(),
-      'date': _selectedDate?.toIso8601String(),
-      'time': '${_selectedTime?.hour}:${_selectedTime?.minute}',
-      'passengers': _passengerCount,
-      'rideType': _isRegular ? 'Regular' : 'One-time',
-      'comments': _commentsController.text.trim(),
-    };
-
-    debugPrint('Publishing Ride: $rideData');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Ride published successfully!'),
-        backgroundColor: Colors.green,
-      ),
+    // Combine date and time into DateTime
+    final departureTime = DateTime(
+      _selectedDate!.year,
+      _selectedDate!.month,
+      _selectedDate!.day,
+      _selectedTime!.hour,
+      _selectedTime!.minute,
     );
 
-    Navigator.pop(context);
+    // Call provider to submit ride
+    final success = await context.read<RideProvider>().submitRide(
+      origin: _originController.text.trim(),
+      destination: _destinationController.text.trim(),
+      departureTime: departureTime,
+      availableSeats: _passengerCount,
+      comments: _commentsController.text.trim(),
+    );
+
+    if (success) {
+      // Show success SnackBar with brand colors
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Ride published successfully!',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green[600],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      Navigator.pop(context);
+    } else {
+      // Show error SnackBar
+      final errorMessage =
+          context.read<RideProvider>().errorMessage ?? 'Failed to publish ride';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  errorMessage,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: BrandColors.primaryRed,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   @override
@@ -220,7 +273,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Publish Button
+              // Publish Button with loading state
               _buildPublishButton(),
             ],
           ),
@@ -319,7 +372,10 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: BrandColors.primaryRed, width: 2),
+              borderSide: const BorderSide(
+                color: BrandColors.primaryRed,
+                width: 2,
+              ),
             ),
             labelStyle: TextStyle(
               fontSize: 14,
@@ -435,7 +491,9 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: !_isRegular ? BrandColors.primaryRed : Colors.transparent,
+                  color: !_isRegular
+                      ? BrandColors.primaryRed
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -457,7 +515,9 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: _isRegular ? BrandColors.primaryRed : Colors.transparent,
+                  color: _isRegular
+                      ? BrandColors.primaryRed
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -477,8 +537,10 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     );
   }
 
-  /// Build premium publish button
+  /// Build premium publish button with loading state
   Widget _buildPublishButton() {
+    final isLoading = context.watch<RideProvider>().isLoading;
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -493,23 +555,33 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ],
       ),
       child: Material(
-        color: BrandColors.primaryRed,
+        color: isLoading ? Colors.grey[400] : BrandColors.primaryRed,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          onTap: _publishRide,
+          onTap: isLoading ? null : _publishRide,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 18),
-            child: const Text(
-              'Publish Ride',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: BrandColors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
-            ),
+            child: isLoading
+                ? const SizedBox(
+                    height: 22,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: BrandColors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                  )
+                : const Text(
+                    'Publish Ride',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: BrandColors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
           ),
         ),
       ),
