@@ -17,7 +17,7 @@ class ApiClient {
   static Future<dynamic> get(String endpoint) async {
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
-      final headers = _buildHeaders();
+      final headers = await _buildHeaders();
 
       final response = await http.get(uri, headers: headers);
       return _handleResponse(response);
@@ -36,7 +36,7 @@ class ApiClient {
   }) async {
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
-      final headers = _buildHeaders();
+      final headers = await _buildHeaders();
 
       final response = await http.post(
         uri,
@@ -68,15 +68,15 @@ class ApiClient {
   }
 
   /// Build request headers with optional Authorization
-  static Map<String, String> _buildHeaders() {
+  static Future<Map<String, String>> _buildHeaders() async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
 
-    final token = AuthStorage.token;
+    final token = await AuthStorage.getToken();
     if (token != null) {
-      headers['Authorization'] = 'Bearer ';
+      headers['Authorization'] = 'Bearer $token';
     }
 
     return headers;

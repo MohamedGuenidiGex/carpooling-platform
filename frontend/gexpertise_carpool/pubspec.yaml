@@ -34,6 +34,9 @@ dependencies:
   # Network & HTTP
   http: ^1.1.0
   
+  # Secure storage for JWT tokens
+  flutter_secure_storage: ^9.2.2
+  
   # Environment variables
   flutter_dotenv: ^5.1.0
   
