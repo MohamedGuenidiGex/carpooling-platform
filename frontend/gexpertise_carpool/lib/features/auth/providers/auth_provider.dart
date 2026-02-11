@@ -73,7 +73,7 @@ class AuthProvider extends ChangeNotifier {
       // Update provider state
       _token = token;
       _isAuthenticated = true;
-      _user = response['user'] as Map<String, dynamic>?;
+      _user = response['employee'] as Map<String, dynamic>?;
 
       notifyListeners();
       return true;

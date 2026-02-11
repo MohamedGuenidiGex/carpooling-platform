@@ -90,6 +90,10 @@ class ReservationList(Resource):
             if not ride:
                 api.abort(404, 'Ride not found')
 
+            # Prevent self-booking: users cannot book their own rides
+            if ride.driver_id == employee_id:
+                api.abort(400, 'You cannot book a seat on your own ride')
+
             # Check duplicate active reservation (PENDING or CONFIRMED)
             existing_reservation = Reservation.query.filter_by(
                 employee_id=employee_id,

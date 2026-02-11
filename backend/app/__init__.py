@@ -26,6 +26,7 @@ def create_app(config_name):
     with app.app_context():
         # Create tables if they don't exist (for first run)
         db.create_all()
-        seed_demo_data()
+        # NOTE: Auto-seeding disabled - use reset_db.py to seed test users manually
+        # seed_demo_data()
 
     return app

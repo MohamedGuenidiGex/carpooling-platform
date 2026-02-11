@@ -49,6 +49,29 @@ class ApiClient {
     }
   }
 
+  /// Perform a PATCH request
+  ///
+  /// [body] will be JSON encoded automatically.
+  /// Returns parsed JSON or throws an exception on error.
+  static Future<dynamic> patch(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final headers = await _buildHeaders();
+
+      final response = await http.patch(
+        uri,
+        headers: headers,
+        body: body != null ? jsonEncode(body) : null,
+      );
+      return _handleResponse(response);
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   /// Temporary connectivity test method
   ///
   /// Tests connection to /rides/ endpoint and logs result.
