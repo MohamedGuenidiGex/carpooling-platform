@@ -15,8 +15,16 @@ DEMO_RIDES = [
 def _get_or_create_employee(data):
     employee = Employee.query.filter_by(email=data['email']).first()
     if employee:
+        # Ensure password is set for existing employees
+        if not employee.password_hash:
+            employee.set_password(data.get('password', 'password123'))
         return employee
-    employee = Employee(**data)
+    employee = Employee(
+        name=data['name'],
+        email=data['email'],
+        department=data.get('department', '')
+    )
+    employee.set_password(data.get('password', 'password123'))
     db.session.add(employee)
     db.session.flush()
     return employee

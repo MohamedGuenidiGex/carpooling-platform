@@ -3,12 +3,12 @@ import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../../../core/theme/brand_text_styles.dart';
-import '../../../core/theme/brand_theme.dart';
 import '../providers/auth_provider.dart';
 
-/// Login Screen for GExpertise Carpool
+/// Login Screen for GExpertise Carpool - Premium Final Boss UI
 ///
-/// Provides email/password authentication UI with brand styling.
+/// Ultra-modern authentication UI with seamless logo, refined inputs,
+/// and premium button styling matching the dashboard aesthetic.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -81,53 +81,54 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Company Title
-                Text(
-                  'GExpertise Carpool',
-                  style: BrandTextStyles.header1.copyWith(
-                    color: BrandColors.primaryRed,
-                  ),
-                  textAlign: TextAlign.center,
+                // Logo - Seamless on white background
+                Image.asset(
+                  'assets/images/logogexpertise.jpg',
+                  height: 110,
+                  fit: BoxFit.contain,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
+
+                // Sleek subtitle
                 Text(
                   'Sign in to continue',
-                  style: BrandTextStyles.body,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 48),
 
-                // Email Field
-                TextField(
+                // Email Field - Premium outlined style
+                _buildInputField(
                   controller: _emailController,
+                  label: 'Email',
+                  hint: 'Enter your email',
+                  icon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'Enter your email',
-                    prefixIcon: Icon(Icons.email_outlined),
-                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
-                // Password Field
-                TextField(
+                // Password Field - Premium outlined style
+                _buildInputField(
                   controller: _passwordController,
+                  label: 'Password',
+                  hint: 'Enter your password',
+                  icon: Icons.lock_outlined,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    hintText: 'Enter your password',
-                    prefixIcon: Icon(Icons.lock_outlined),
-                  ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
                 // Validation Message
                 if (_validationMessage != null)
@@ -142,16 +143,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                // Login Button
-                ElevatedButton(
-                  onPressed: _onLoginPressed,
-                  style: BrandTheme.primaryButton,
-                  child: const Text('Login'),
-                ),
+                // Premium Login Button
+                _buildPremiumLoginButton(),
 
                 const SizedBox(height: 24),
 
-                // Connection Test Section
+                // Connection Test Section - PRESERVED EXACTLY AS IS
                 const Divider(),
                 const SizedBox(height: 16),
                 Text(
@@ -191,6 +188,99 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build premium outlined input field
+  Widget _buildInputField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType? keyboardType,
+    bool obscureText = false,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        color: BrandColors.black,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(icon, color: Colors.grey[500]),
+        filled: true,
+        fillColor: Colors.grey[50],
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 18,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: BrandColors.primaryRed, width: 2),
+        ),
+        labelStyle: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: Colors.grey[600],
+        ),
+        hintStyle: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: Colors.grey[400],
+        ),
+      ),
+    );
+  }
+
+  /// Build premium login button matching dashboard aesthetic
+  Widget _buildPremiumLoginButton() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: BrandColors.primaryRed.withOpacity(0.15),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: -4,
+          ),
+        ],
+      ),
+      child: Material(
+        color: BrandColors.primaryRed,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: _onLoginPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              'Login',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: BrandColors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+              ),
             ),
           ),
         ),
