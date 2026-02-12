@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/auth_storage.dart';
+import '../models/user_model.dart';
 
 /// Authentication Provider for GExpertise Carpool
 ///
@@ -9,16 +10,18 @@ import '../../../core/network/auth_storage.dart';
 class AuthProvider extends ChangeNotifier {
   bool _isAuthenticated = false;
   bool _isLoading = false;
+  bool _isUpdatingProfile = false;
   String? _errorMessage;
   String? _token;
-  Map<String, dynamic>? _user;
+  User? _user;
 
   // Getters
   bool get isAuthenticated => _isAuthenticated;
   bool get isLoading => _isLoading;
+  bool get isUpdatingProfile => _isUpdatingProfile;
   String? get errorMessage => _errorMessage;
   String? get token => _token;
-  Map<String, dynamic>? get user => _user;
+  User? get user => _user;
 
   /// Initialize auth state on app startup
   ///
@@ -34,8 +37,8 @@ class AuthProvider extends ChangeNotifier {
         if (token != null) {
           _token = token;
           _isAuthenticated = true;
-          // TODO: Fetch user profile from /auth/me endpoint
-          notifyListeners();
+          // Fetch user profile from /users/me endpoint
+          await refreshUserProfile();
         }
       }
     } catch (e) {
@@ -73,7 +76,7 @@ class AuthProvider extends ChangeNotifier {
       // Update provider state
       _token = token;
       _isAuthenticated = true;
-      _user = response['employee'] as Map<String, dynamic>?;
+      _user = User.fromJson(response['employee'] as Map<String, dynamic>);
 
       notifyListeners();
       return true;
@@ -91,6 +94,62 @@ class AuthProvider extends ChangeNotifier {
       return false;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Refresh user profile from backend
+  ///
+  /// Fetches latest user details from GET /users/me to update
+  /// stats and vehicle info.
+  Future<void> refreshUserProfile() async {
+    if (_token == null) return;
+
+    try {
+      final response = await ApiClient.get('/users/me');
+      _user = User.fromJson(response);
+      notifyListeners();
+    } on ApiException catch (e) {
+      _setError('Failed to refresh profile: ${e.message}');
+    } catch (e) {
+      _setError('Failed to refresh profile: $e');
+    }
+  }
+
+  /// Update user profile
+  ///
+  /// Sends a PATCH request to update phone and vehicle details.
+  Future<bool> updateUserProfile({
+    String? phone,
+    String? carModel,
+    String? plate,
+    String? color,
+  }) async {
+    if (_token == null || _user == null) return false;
+
+    _setUpdatingProfile(true);
+    _clearError();
+
+    try {
+      final body = <String, dynamic>{};
+      if (phone != null) body['phone_number'] = phone;
+      if (carModel != null) body['car_model'] = carModel;
+      if (plate != null) body['car_plate'] = plate;
+      if (color != null) body['car_color'] = color;
+
+      final response = await ApiClient.patch('/users/me', body: body);
+
+      // Update local user with response
+      _user = User.fromJson(response);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError('Failed to update profile: ${e.message}');
+      return false;
+    } catch (e) {
+      _setError('Failed to update profile: $e');
+      return false;
+    } finally {
+      _setUpdatingProfile(false);
     }
   }
 
@@ -128,6 +187,11 @@ class AuthProvider extends ChangeNotifier {
 
   void _setLoading(bool loading) {
     _isLoading = loading;
+    notifyListeners();
+  }
+
+  void _setUpdatingProfile(bool updating) {
+    _isUpdatingProfile = updating;
     notifyListeners();
   }
 

@@ -129,6 +129,7 @@ class ReservationList(Resource):
                 employee_id=employee_id,
                 ride_id=ride.id,
                 message=f'Reservation request pending for {ride.origin} → {ride.destination} (Ride #{ride.id}). Waiting for driver approval.',
+                type='request',
                 is_read=False
             )
             db.session.add(notification)
@@ -138,6 +139,7 @@ class ReservationList(Resource):
                 employee_id=ride.driver_id,
                 ride_id=ride.id,
                 message=f'New reservation request for your ride {ride.origin} → {ride.destination} (Ride #{ride.id}). Employee #{employee_id} requested {seats_reserved} seat(s).',
+                type='request',
                 is_read=False
             )
             db.session.add(driver_notification)
@@ -202,6 +204,19 @@ class ReservationCancel(Resource):
         
         # Set status to CANCELLED (don't delete)
         reservation.status = 'CANCELLED'
+        
+        # Create notification for the driver about cancellation
+        ride = Ride.query.get(reservation.ride_id)
+        if ride:
+            cancel_notification = Notification(
+                employee_id=ride.driver_id,
+                ride_id=ride.id,
+                message=f'Passenger cancelled their reservation for {ride.origin} → {ride.destination} (Ride #{ride.id}). {reservation.seats_reserved} seat(s) released.',
+                type='cancellation',
+                is_read=False
+            )
+            db.session.add(cancel_notification)
+        
         db.session.commit()
 
         # Log reservation cancellation
@@ -267,6 +282,7 @@ class ReservationApprove(Resource):
                 employee_id=reservation.employee_id,
                 ride_id=ride.id,
                 message=f'Reservation APPROVED for {ride.origin} → {ride.destination} (Ride #{ride.id}). {reservation.seats_reserved} seat(s) confirmed.',
+                type='approval',
                 is_read=False
             )
             db.session.add(notification)
@@ -331,6 +347,7 @@ class ReservationReject(Resource):
                 employee_id=reservation.employee_id,
                 ride_id=ride.id,
                 message=f'Reservation REJECTED for {ride.origin} → {ride.destination} (Ride #{ride.id}). Please find another ride.',
+                type='rejection',
                 is_read=False
             )
             db.session.add(notification)

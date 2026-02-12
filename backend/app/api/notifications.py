@@ -1,6 +1,6 @@
 from flask import request
 from flask_restx import Namespace, Resource, fields
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.extensions import db
 from app.models import Notification
@@ -16,7 +16,8 @@ error_response = api.model('ErrorResponse', {
 notification_create = api.model('NotificationCreate', {
     'employee_id': fields.Integer(required=True, description='Employee ID to notify'),
     'ride_id': fields.Integer(required=False, description='Related ride ID (optional)'),
-    'message': fields.String(required=True, description='Notification message content')
+    'message': fields.String(required=True, description='Notification message content'),
+    'type': fields.String(required=False, description='Notification type (request, approval, rejection, cancellation, info)')
 })
 
 notification_response = api.model('NotificationResponse', {
@@ -24,6 +25,7 @@ notification_response = api.model('NotificationResponse', {
     'employee_id': fields.Integer(description='Employee ID'),
     'ride_id': fields.Integer(description='Ride ID'),
     'message': fields.String(description='Notification message'),
+    'type': fields.String(description='Notification type'),
     'is_read': fields.Boolean(description='Read status'),
     'created_at': fields.DateTime(description='Creation timestamp')
 })
@@ -31,12 +33,28 @@ notification_response = api.model('NotificationResponse', {
 notification_read_response = api.model('NotificationReadResponse', {
     'id': fields.Integer(description='Notification ID'),
     'message': fields.String(description='Notification message'),
+    'type': fields.String(description='Notification type'),
     'is_read': fields.Boolean(description='Read status')
 })
 
 
 @api.route('/')
-class NotificationCreate(Resource):
+class NotificationList(Resource):
+    @jwt_required()
+    @api.doc('list_notifications', security='Bearer', description='Get all notifications for current user (newest first)',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    @api.marshal_list_with(notification_response)
+    def get(self):
+        """Get all notifications for current user (newest first)"""
+        employee_id = int(get_jwt_identity())
+        notifications = Notification.query.filter_by(employee_id=employee_id) \
+            .order_by(Notification.created_at.desc()).all()
+        return notifications
+
     @jwt_required()
     @api.doc('create_notification', security='Bearer', description='Create a custom notification for an employee',
         responses={
@@ -54,6 +72,7 @@ class NotificationCreate(Resource):
         employee_id = data.get('employee_id')
         message = data.get('message')
         ride_id = data.get('ride_id')
+        notification_type = data.get('type', 'info')
         
         if not employee_id or not message:
             api.abort(400, 'employee_id and message are required')
@@ -62,6 +81,7 @@ class NotificationCreate(Resource):
             employee_id=employee_id,
             ride_id=ride_id,
             message=message,
+            type=notification_type,
             is_read=False
         )
         db.session.add(notification)
@@ -70,22 +90,24 @@ class NotificationCreate(Resource):
         return notification, 201
 
 
-@api.route('/<int:employee_id>')
-@api.param('employee_id', 'Employee ID')
-class NotificationList(Resource):
+@api.route('/mark-all-read')
+class NotificationMarkAllRead(Resource):
     @jwt_required()
-    @api.doc('list_notifications', security='Bearer',
+    @api.doc('mark_all_read', security='Bearer', description='Mark all notifications as read for current user',
         responses={
             401: ('Unauthorized - JWT required', error_response),
             500: ('Internal server error', error_response)
         }
     )
-    @api.marshal_list_with(notification_response)
-    def get(self, employee_id):
-        """List all notifications for an employee (newest first)"""
-        notifications = Notification.query.filter_by(employee_id=employee_id) \
-            .order_by(Notification.created_at.desc()).all()
-        return notifications
+    def post(self):
+        """Mark all notifications as read for current user"""
+        employee_id = int(get_jwt_identity())
+        
+        # Update all unread notifications for this employee
+        Notification.query.filter_by(employee_id=employee_id, is_read=False).update({'is_read': True})
+        db.session.commit()
+        
+        return {'message': 'All notifications marked as read'}, 200
 
 
 @api.route('/<int:notification_id>/read')
@@ -103,8 +125,6 @@ class NotificationRead(Resource):
     @api.marshal_with(notification_read_response)
     def patch(self, notification_id):
         """Mark a notification as read"""
-        from flask_jwt_extended import get_jwt_identity
-        
         employee_id = int(get_jwt_identity())
         notification = Notification.query.get(notification_id)
         
@@ -127,15 +147,23 @@ class NotificationDetail(Resource):
     @api.doc('delete_notification', security='Bearer', description='Delete a notification by ID',
         responses={
             401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Not authorized', error_response),
             404: ('Notification not found', error_response),
             500: ('Internal server error', error_response)
         }
     )
     def delete(self, notification_id):
         """Delete a notification by ID"""
+        employee_id = int(get_jwt_identity())
         notification = Notification.query.get(notification_id)
+        
         if not notification:
             api.abort(404, 'Notification not found')
+        
+        # Only the owner can delete their notification
+        if notification.employee_id != employee_id:
+            api.abort(403, 'Not authorized to delete this notification')
+        
         db.session.delete(notification)
         db.session.commit()
         return {'message': 'Notification deleted successfully'}, 200

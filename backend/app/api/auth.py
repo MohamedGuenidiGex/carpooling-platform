@@ -20,7 +20,11 @@ register_response = api.model('RegisterResponse', {
     'id': fields.Integer(description='Employee ID'),
     'name': fields.String(description='Employee name'),
     'email': fields.String(description='Employee email'),
-    'department': fields.String(description='Department'),
+    'department': fields.String(description='Employee department'),
+    'phone_number': fields.String(description='Phone number'),
+    'car_model': fields.String(description='Car model'),
+    'car_plate': fields.String(description='Car plate number'),
+    'car_color': fields.String(description='Car color'),
     'created_at': fields.DateTime(description='Creation timestamp')
 })
 
@@ -39,7 +43,11 @@ me_response = api.model('MeResponse', {
     'id': fields.Integer(description='Employee ID'),
     'name': fields.String(description='Employee name'),
     'email': fields.String(description='Employee email'),
-    'department': fields.String(description='Department'),
+    'department': fields.String(description='Employee department'),
+    'phone_number': fields.String(description='Phone number'),
+    'car_model': fields.String(description='Car model'),
+    'car_plate': fields.String(description='Car plate number'),
+    'car_color': fields.String(description='Car color'),
     'created_at': fields.DateTime(description='Creation timestamp')
 })
 
