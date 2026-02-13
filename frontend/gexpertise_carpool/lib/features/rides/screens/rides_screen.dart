@@ -11,12 +11,15 @@ import '../../../core/widgets/gexpertise_drawer.dart';
 import '../../../features/notifications/providers/notification_provider.dart';
 import '../../../features/notifications/screens/notifications_screen.dart';
 import 'find_ride_screen.dart';
-import 'offer_ride_screen.dart';
+import 'create_ride_screen.dart';
 
-/// Rides Screen - Map-First Home Dashboard
+/// Search mode enum for unified search experience
+enum SearchMode { none, passenger, driver }
+
+/// Rides Screen - Map-First Home Dashboard with Unified Search
 ///
 /// Uber/InDrive-style layout with map background, floating controls,
-/// and a bottom action panel for Find/Offer ride buttons.
+/// and a unified search-first experience for both Find and Offer rides.
 class RidesScreen extends StatefulWidget {
   const RidesScreen({super.key});
 
@@ -30,18 +33,16 @@ class _RidesScreenState extends State<RidesScreen> {
   final MapController _mapController = MapController();
   LatLng? _currentPosition;
 
-  // Location picker state
-  bool _isPickingLocation = false;
+  // Unified search state
+  bool _isSearching = false;
+  SearchMode _searchMode = SearchMode.none;
   final TextEditingController _searchController = TextEditingController();
-  LatLng? _pickedLocation;
-  String? _pickedLocationName;
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    // Start notification polling
     _startNotificationPolling();
-    // Get current location
     _determinePosition();
   }
 
@@ -50,6 +51,7 @@ class _RidesScreenState extends State<RidesScreen> {
     _notificationTimer?.cancel();
     _mapController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -132,14 +134,16 @@ class _RidesScreenState extends State<RidesScreen> {
     // Get current position
     final position = await Geolocator.getCurrentPosition();
 
-    if (mounted) {
-      setState(() {
-        _currentPosition = LatLng(position.latitude, position.longitude);
-      });
+    _onPositionDetermined(position);
+  }
 
-      // Move map to current position
-      _mapController.move(_currentPosition!, 15.0);
-    }
+  void _onPositionDetermined(Position position) {
+    final newPosition = LatLng(position.latitude, position.longitude);
+    setState(() {
+      _currentPosition = newPosition;
+    });
+    // Immediately center map on user's position
+    _mapController.move(newPosition, 15.0);
   }
 
   /// Center map on current location
@@ -151,104 +155,107 @@ class _RidesScreenState extends State<RidesScreen> {
     }
   }
 
-  /// Enter location picker mode
-  void _enterPickerMode() {
+  /// Start searching as Passenger (Find a Ride)
+  void _startPassengerSearch() {
     setState(() {
-      _isPickingLocation = true;
+      _isSearching = true;
+      _searchMode = SearchMode.passenger;
+    });
+    // Auto-open keyboard
+    Future.delayed(const Duration(milliseconds: 100), () {
+      _searchFocusNode.requestFocus();
     });
   }
 
-  /// Exit location picker mode
-  void _exitPickerMode() {
+  /// Start searching as Driver (Offer a Ride)
+  void _startDriverSearch() {
     setState(() {
-      _isPickingLocation = false;
+      _isSearching = true;
+      _searchMode = SearchMode.driver;
+    });
+    // Auto-open keyboard
+    Future.delayed(const Duration(milliseconds: 100), () {
+      _searchFocusNode.requestFocus();
+    });
+  }
+
+  /// Cancel search and return to button mode
+  void _cancelSearch() {
+    setState(() {
+      _isSearching = false;
+      _searchMode = SearchMode.none;
       _searchController.clear();
-      _pickedLocation = null;
-      _pickedLocationName = null;
     });
+    _searchFocusNode.unfocus();
   }
 
-  /// Confirm selected location and navigate to FindRideScreen
-  void _confirmLocation() {
-    final center = _mapController.camera.center;
-    setState(() {
-      _pickedLocation = center;
-    });
+  /// Handle location selection based on mode
+  void _onLocationSelected(Map<String, dynamic> suggestion) {
+    final String name = suggestion['display_name'] as String;
+    final double lat = suggestion['lat'] as double;
+    final double lon = suggestion['lon'] as double;
 
-    // Get location name via reverse geocoding
-    OsmSearchService.reverseGeocode(center.latitude, center.longitude).then((
-      name,
-    ) {
-      setState(() {
-        _pickedLocationName = name ?? 'Selected Location';
-      });
-    });
-
-    // Navigate to FindRideScreen with the selected location
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FindRideScreen(
-          initialPickupLocation: center,
-          initialPickupName: _pickedLocationName,
+    // Navigate based on mode
+    if (_searchMode == SearchMode.driver) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreateRideScreen(
+            startName: name,
+            startCoordinates: LatLng(lat, lon),
+          ),
         ),
-      ),
-    ).then((_) {
-      // Reset picker mode when returning
-      _exitPickerMode();
-    });
-  }
-
-  /// Move map to searched location
-  void _moveToSearchedLocation(double lat, double lon, String name) {
-    _mapController.move(LatLng(lat, lon), 15.0);
-    setState(() {
-      _pickedLocation = LatLng(lat, lon);
-      _pickedLocationName = name;
-    });
+      ).then((_) => _cancelSearch());
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FindRideScreen(
+            startName: name,
+            startCoordinates: LatLng(lat, lon),
+          ),
+        ),
+      ).then((_) => _cancelSearch());
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      drawer: _isPickingLocation ? null : const GExpertiseDrawer(),
+      drawer: _isSearching ? null : const GExpertiseDrawer(),
       body: Stack(
         children: [
           // Layer 1: Map Background
           _MapBackground(
             mapController: _mapController,
             currentPosition: _currentPosition,
-            showCenterPin: _isPickingLocation,
+            showCenterPin: _isSearching,
           ),
 
-          // Layer 2: Menu Button (Top Left) - hidden in picker mode
-          if (!_isPickingLocation) _MenuButton(),
+          // Layer 2: Menu Button (Top Left) - hidden in search mode
+          if (!_isSearching) _MenuButton(),
 
-          // Layer 3: Search Bar (Top) - only in picker mode
-          if (_isPickingLocation)
+          // Layer 3: Search Bar (Top) - only in search mode
+          if (_isSearching)
             _SearchBar(
               controller: _searchController,
-              onSuggestionSelected: (suggestion) {
-                _moveToSearchedLocation(
-                  suggestion['lat'] as double,
-                  suggestion['lon'] as double,
-                  suggestion['display_name'] as String,
-                );
-              },
+              focusNode: _searchFocusNode,
+              currentPosition: _currentPosition,
+              onLocationSelected: _onLocationSelected,
             ),
 
           // Layer 4: Current Location Button (Bottom Right, above panel)
           _CurrentLocationButton(onPressed: _goToCurrentLocation),
 
-          // Layer 5: Floating Action Panel or Confirm Panel (Bottom)
-          if (_isPickingLocation)
-            _ConfirmLocationPanel(
-              onConfirm: _confirmLocation,
-              onCancel: _exitPickerMode,
-            )
+          // Layer 5: Floating Action Panel or Cancel Button (Bottom)
+          if (_isSearching)
+            _CancelPanel(onCancel: _cancelSearch)
           else
-            _BottomActionPanel(onFindRide: _enterPickerMode),
+            _BottomActionPanel(
+              onFindRide: _startPassengerSearch,
+              onOfferRide: _startDriverSearch,
+            ),
         ],
       ),
     );
@@ -271,17 +278,39 @@ class _MapBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Use current position if available, otherwise fallback to Sfax coordinates
+    final LatLng initialCenter =
+        currentPosition ?? const LatLng(34.7408, 10.7600);
+
     return FlutterMap(
       mapController: mapController,
-      options: const MapOptions(
-        initialCenter: LatLng(36.8065, 10.1815), // Tunis, Tunisia
-        initialZoom: 13.0,
+      options: MapOptions(
+        initialCenter: initialCenter,
+        initialZoom: 15.0,
+        minZoom: 3,
+        maxZoom: 18,
       ),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.gexpertise.carpooling',
+          userAgentPackageName: 'com.gexpertise.carpool',
         ),
+        // Center pin marker when in search mode
+        if (showCenterPin)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: initialCenter,
+                width: 40,
+                height: 40,
+                child: const Icon(
+                  Icons.location_pin,
+                  color: Colors.red,
+                  size: 40,
+                ),
+              ),
+            ],
+          ),
         // Current location marker
         if (currentPosition != null)
           MarkerLayer(
@@ -412,8 +441,12 @@ class _CurrentLocationButton extends StatelessWidget {
 /// White panel pinned to bottom using Positioned widget.
 class _BottomActionPanel extends StatelessWidget {
   final VoidCallback onFindRide;
+  final VoidCallback onOfferRide;
 
-  const _BottomActionPanel({required this.onFindRide});
+  const _BottomActionPanel({
+    required this.onFindRide,
+    required this.onOfferRide,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -469,14 +502,7 @@ class _BottomActionPanel extends StatelessWidget {
                 _ActionButton(
                   label: 'OFFER A RIDE',
                   icon: Icons.add_circle_outline,
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const OfferRideScreen(),
-                      ),
-                    );
-                  },
+                  onPressed: onOfferRide,
                   isOutlined: true,
                 ),
               ],
@@ -493,11 +519,15 @@ class _BottomActionPanel extends StatelessWidget {
 /// TypeAheadField for searching places via OSM Nominatim.
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
-  final Function(Map<String, dynamic>) onSuggestionSelected;
+  final FocusNode focusNode;
+  final LatLng? currentPosition;
+  final Function(Map<String, dynamic>) onLocationSelected;
 
   const _SearchBar({
     required this.controller,
-    required this.onSuggestionSelected,
+    required this.focusNode,
+    this.currentPosition,
+    required this.onLocationSelected,
   });
 
   @override
@@ -519,9 +549,21 @@ class _SearchBar extends StatelessWidget {
           ),
           child: TypeAheadField<Map<String, dynamic>>(
             controller: controller,
+            focusNode: focusNode,
             suggestionsCallback: (pattern) async {
-              if (pattern.length < 2) return [];
-              return await OsmSearchService.searchPlaces(pattern);
+              if (pattern.length < 2) {
+                return <Map<String, dynamic>>[];
+              }
+              try {
+                final results = await OsmSearchService.searchPlaces(
+                  pattern,
+                  currentLocation: currentPosition,
+                );
+                return results;
+              } catch (e) {
+                debugPrint('Search error: $e');
+                return <Map<String, dynamic>>[];
+              }
             },
             builder: (context, controller, focusNode) {
               return TextField(
@@ -545,10 +587,19 @@ class _SearchBar extends StatelessWidget {
               );
             },
             itemBuilder: (context, suggestion) {
+              final isCurrentLocation =
+                  suggestion['is_current_location'] == true;
+              final displayName =
+                  suggestion['display_name'] as String? ??
+                  suggestion['name'] as String? ??
+                  'Unknown location';
               return ListTile(
-                leading: const Icon(Icons.location_on, color: Colors.grey),
+                leading: Icon(
+                  isCurrentLocation ? Icons.my_location : Icons.location_on,
+                  color: isCurrentLocation ? Colors.green : Colors.grey,
+                ),
                 title: Text(
-                  suggestion['display_name'] as String,
+                  displayName,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 14),
@@ -556,8 +607,32 @@ class _SearchBar extends StatelessWidget {
               );
             },
             onSelected: (suggestion) {
-              onSuggestionSelected(suggestion);
+              onLocationSelected(suggestion);
             },
+            emptyBuilder: (context) => const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'No locations found',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            loadingBuilder: (context) => const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+            errorBuilder: (context, error) => Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Error: $error',
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
           ),
         ),
       ),
@@ -565,17 +640,13 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
-/// Confirm Location Panel (Picker Mode)
+/// Cancel Panel (Picker Mode)
 ///
-/// Bottom panel with Confirm and Cancel buttons.
-class _ConfirmLocationPanel extends StatelessWidget {
-  final VoidCallback onConfirm;
+/// Simple cancel button for the streamlined location picker.
+class _CancelPanel extends StatelessWidget {
   final VoidCallback onCancel;
 
-  const _ConfirmLocationPanel({
-    required this.onConfirm,
-    required this.onCancel,
-  });
+  const _CancelPanel({required this.onCancel});
 
   @override
   Widget build(BuildContext context) {
@@ -592,7 +663,7 @@ class _ConfirmLocationPanel extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withOpacity(0.1),
               blurRadius: 24,
               offset: const Offset(0, -4),
               spreadRadius: -4,
@@ -621,53 +692,31 @@ class _ConfirmLocationPanel extends StatelessWidget {
 
                 // Instructions
                 const Text(
-                  'Adjust the pin to set your pickup location',
+                  'Search and select your starting location',
                   style: TextStyle(fontSize: 14, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
 
-                // Confirm Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton.icon(
-                    onPressed: onConfirm,
-                    icon: const Icon(Icons.check_circle, color: Colors.white),
-                    label: const Text(
-                      'CONFIRM LOCATION',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                        color: Colors.white,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: BrandColors.primaryRed,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
                 // Cancel Button
                 SizedBox(
                   width: double.infinity,
-                  height: 48,
-                  child: TextButton.icon(
+                  height: 54,
+                  child: OutlinedButton.icon(
                     onPressed: onCancel,
                     icon: const Icon(Icons.close, color: Colors.grey),
                     label: const Text(
                       'CANCEL',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: Colors.grey,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.grey),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                   ),

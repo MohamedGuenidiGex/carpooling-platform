@@ -31,7 +31,8 @@ ride_response = api.model('RideResponse', {
     'departure_time': fields.DateTime(description='Departure datetime (ISO)'),
     'available_seats': fields.Integer(description='Seats available'),
     'status': fields.String(description='Ride status (ACTIVE/FULL/COMPLETED)'),
-    'created_at': fields.DateTime(description='Creation timestamp')
+    'created_at': fields.DateTime(description='Creation timestamp'),
+    'reservations': fields.List(fields.Raw, description='List of reservation requests with passenger details')
 })
 
 participant_response = api.model('ParticipantResponse', {
@@ -50,6 +51,57 @@ paginated_rides_response = api.model('PaginatedRidesResponse', {
     'total_items': fields.Integer(description='Total number of items'),
     'total_pages': fields.Integer(description='Total number of pages')
 })
+
+
+def serialize_ride_with_reservations(ride):
+    """Helper function to serialize a ride with its reservations"""
+    # Fetch reservations with passenger details
+    reservations = db.session.query(
+        Reservation.id,
+        Reservation.employee_id,
+        Reservation.seats_reserved,
+        Reservation.status,
+        Reservation.created_at,
+        Employee.name,
+        Employee.email
+    ).join(
+        Employee, Reservation.employee_id == Employee.id
+    ).filter(
+        Reservation.ride_id == ride.id
+    ).all()
+    
+    # DEBUG: Log what we found
+    print(f"DEBUG: Ride {ride.id} has {len(reservations)} reservations")
+    for r in reservations:
+        print(f"  - Reservation {r.id}: employee={r.employee_id}, status={r.status}, seats={r.seats_reserved}")
+    
+    return {
+        'id': ride.id,
+        'driver_id': ride.driver_id,
+        'origin': ride.origin,
+        'destination': ride.destination,
+        'departure_time': ride.departure_time.isoformat() if ride.departure_time else None,
+        'available_seats': ride.available_seats,
+        'status': ride.status,
+        'created_at': ride.created_at.isoformat() if ride.created_at else None,
+        'reservations': [
+            {
+                'id': r.id,
+                'employee_id': r.employee_id,
+                'seats_reserved': r.seats_reserved,
+                'status': r.status,
+                'created_at': r.created_at.isoformat() if r.created_at else None,
+                'passenger_name': r.name,
+                'passenger_email': r.email
+            }
+            for r in reservations
+        ]
+    }
+
+
+def serialize_rides_list(rides):
+    """Helper function to serialize a list of rides with reservations"""
+    return [serialize_ride_with_reservations(ride) for ride in rides]
 
 @api.route('/')
 class RideList(Resource):
@@ -141,7 +193,7 @@ class RideList(Resource):
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
         return {
-            'items': pagination.items,
+            'items': serialize_rides_list(pagination.items),
             'page': pagination.page,
             'per_page': pagination.per_page,
             'total_items': pagination.total,
@@ -202,13 +254,12 @@ class RideDetail(Resource):
             500: ('Internal server error', error_response)
         }
     )
-    @api.marshal_with(ride_response)
     def get(self, id):
         """Get a single ride by ID"""
         ride = Ride.query.get(id)
         if not ride:
             api.abort(404, 'Ride not found')
-        return ride
+        return serialize_ride_with_reservations(ride)
 
     @jwt_required()
     @api.doc('delete_ride', security='Bearer', description='Delete a ride by ID',
@@ -366,4 +417,132 @@ class RideParticipants(Resource):
                 'reservation_status': p.reservation_status
             }
             for p in participants
+        ]
+
+
+# Pending request response model
+pending_request_response = api.model('PendingRequestResponse', {
+    'employee_id': fields.Integer(description='Employee ID'),
+    'name': fields.String(description='Employee name'),
+    'email': fields.String(description='Employee email'),
+    'seats_requested': fields.Integer(description='Seats requested'),
+    'status': fields.String(description='Request status (PENDING)'),
+    'requested_at': fields.DateTime(description='Request timestamp')
+})
+
+
+@api.route('/<int:id>/pending-requests')
+@api.param('id', 'Ride ID')
+class RidePendingRequests(Resource):
+    @jwt_required()
+    @api.doc('list_pending_requests', security='Bearer', description='Get list of pending reservation requests for a ride (driver only)',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can view pending requests', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    @api.marshal_with(pending_request_response)
+    def get(self, id):
+        """List pending reservation requests (only the driver can access)"""
+        employee_id = int(get_jwt_identity())
+        ride = Ride.query.get(id)
+        
+        if not ride:
+            api.abort(404, 'Ride not found')
+        
+        # Only driver can view pending requests
+        if ride.driver_id != employee_id:
+            api.abort(403, 'Only the ride driver can view pending requests')
+        
+        # Join Employee, Reservation, and Ride tables to get pending requests
+        pending_requests = db.session.query(
+            Employee.id.label('employee_id'),
+            Employee.name,
+            Employee.email,
+            Reservation.seats_reserved.label('seats_requested'),
+            Reservation.status.label('status'),
+            Reservation.created_at.label('requested_at')
+        ).join(
+            Reservation, Employee.id == Reservation.employee_id
+        ).filter(
+            Reservation.ride_id == id,
+            Reservation.status == 'PENDING'
+        ).all()
+        
+        return [
+            {
+                'employee_id': pr.employee_id,
+                'name': pr.name,
+                'email': pr.email,
+                'seats_requested': pr.seats_requested,
+                'status': pr.status,
+                'requested_at': pr.requested_at.isoformat() if pr.requested_at else None
+            }
+            for pr in pending_requests
+        ]
+
+
+# Pending request response model
+pending_request_response = api.model('PendingRequestResponse', {
+    'employee_id': fields.Integer(description='Employee ID'),
+    'name': fields.String(description='Employee name'),
+    'email': fields.String(description='Employee email'),
+    'seats_requested': fields.Integer(description='Seats requested'),
+    'status': fields.String(description='Request status (PENDING)'),
+    'requested_at': fields.DateTime(description='Request timestamp')
+})
+
+
+@api.route('/<int:id>/pending-requests')
+@api.param('id', 'Ride ID')
+class RidePendingRequests(Resource):
+    @jwt_required()
+    @api.doc('list_pending_requests', security='Bearer', description='Get list of pending reservation requests for a ride (driver only)',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can view pending requests', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    @api.marshal_with(pending_request_response)
+    def get(self, id):
+        """List pending reservation requests (only the driver can access)"""
+        employee_id = int(get_jwt_identity())
+        ride = Ride.query.get(id)
+        
+        if not ride:
+            api.abort(404, 'Ride not found')
+        
+        # Only driver can view pending requests
+        if ride.driver_id != employee_id:
+            api.abort(403, 'Only the ride driver can view pending requests')
+        
+        # Join Employee, Reservation, and Ride tables to get pending requests
+        pending_requests = db.session.query(
+            Employee.id.label('employee_id'),
+            Employee.name,
+            Employee.email,
+            Reservation.seats_reserved.label('seats_requested'),
+            Reservation.status.label('status'),
+            Reservation.created_at.label('requested_at')
+        ).join(
+            Reservation, Employee.id == Reservation.employee_id
+        ).filter(
+            Reservation.ride_id == id,
+            Reservation.status == 'PENDING'
+        ).all()
+        
+        return [
+            {
+                'employee_id': pr.employee_id,
+                'name': pr.name,
+                'email': pr.email,
+                'seats_requested': pr.seats_requested,
+                'status': pr.status,
+                'requested_at': pr.requested_at.isoformat() if pr.requested_at else None
+            }
+            for pr in pending_requests
         ]
