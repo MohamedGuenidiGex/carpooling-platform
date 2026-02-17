@@ -42,7 +42,10 @@ class _RidesScreenState extends State<RidesScreen> {
   @override
   void initState() {
     super.initState();
-    _startNotificationPolling();
+    // Defer notification fetch to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startNotificationPolling();
+    });
     _determinePosition();
   }
 
