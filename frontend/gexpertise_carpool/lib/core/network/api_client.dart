@@ -26,6 +26,21 @@ class ApiClient {
     }
   }
 
+  /// Perform a DELETE request
+  ///
+  /// Returns parsed JSON or null for empty response.
+  static Future<dynamic> delete(String endpoint) async {
+    try {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final headers = await _buildHeaders();
+
+      final response = await http.delete(uri, headers: headers);
+      return _handleResponse(response);
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   /// Perform a POST request
   ///
   /// [body] will be JSON encoded automatically.

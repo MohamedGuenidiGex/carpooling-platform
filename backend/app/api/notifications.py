@@ -110,6 +110,25 @@ class NotificationMarkAllRead(Resource):
         return {'message': 'All notifications marked as read'}, 200
 
 
+@api.route('/clear-all')
+class NotificationClearAll(Resource):
+    @jwt_required()
+    @api.doc('clear_all_notifications', security='Bearer', description='Delete all notifications for current user',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    def delete(self):
+        """Delete all notifications for current user"""
+        employee_id = int(get_jwt_identity())
+
+        Notification.query.filter_by(employee_id=employee_id).delete()
+        db.session.commit()
+
+        return {'message': 'All notifications cleared'}, 200
+
+
 @api.route('/<int:notification_id>/read')
 @api.param('notification_id', 'Notification ID')
 class NotificationRead(Resource):

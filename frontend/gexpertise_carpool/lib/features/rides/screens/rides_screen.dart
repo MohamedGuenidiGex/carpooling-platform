@@ -346,34 +346,6 @@ class _MapBackground extends StatelessWidget {
   }
 }
 
-/// Center Pin Marker (Visible in Picker Mode)
-///
-/// Displays a red pin in the center of the map.
-class _CenterPin extends StatelessWidget {
-  const _CenterPin();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.location_pin, color: BrandColors.primaryRed, size: 50),
-          // Shadow under the pin
-          Container(
-            width: 20,
-            height: 6,
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Menu Button (Top Left)
 ///
 /// Hamburger menu button that opens the drawer.

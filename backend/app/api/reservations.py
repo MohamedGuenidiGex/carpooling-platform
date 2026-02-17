@@ -90,6 +90,8 @@ class ReservationList(Resource):
             if not ride:
                 api.abort(404, 'Ride not found')
 
+            short_destination = (ride.destination or '').split(',')[0].strip() or ride.destination
+
             # Prevent self-booking: users cannot book their own rides
             if ride.driver_id == employee_id:
                 api.abort(400, 'You cannot book a seat on your own ride')
@@ -124,11 +126,14 @@ class ReservationList(Resource):
             db.session.add(reservation)
             db.session.flush()
 
+            passenger = Employee.query.get(employee_id)
+            passenger_name = passenger.name if passenger else f'Employee #{employee_id}'
+
             # Create notification for the requesting employee
             notification = Notification(
                 employee_id=employee_id,
                 ride_id=ride.id,
-                message=f'Reservation request pending for {ride.origin} → {ride.destination} (Ride #{ride.id}). Waiting for driver approval.',
+                message=f'New Request sent! Waiting for approval for your trip to {short_destination}.',
                 type='request',
                 is_read=False
             )
@@ -138,7 +143,7 @@ class ReservationList(Resource):
             driver_notification = Notification(
                 employee_id=ride.driver_id,
                 ride_id=ride.id,
-                message=f'New reservation request for your ride {ride.origin} → {ride.destination} (Ride #{ride.id}). Employee #{employee_id} requested {seats_reserved} seat(s).',
+                message=f'New Request: {passenger_name} wants to join your ride to {short_destination}.',
                 type='request',
                 is_read=False
             )
@@ -208,10 +213,11 @@ class ReservationCancel(Resource):
         # Create notification for the driver about cancellation
         ride = Ride.query.get(reservation.ride_id)
         if ride:
+            short_destination = (ride.destination or '').split(',')[0].strip() or ride.destination
             cancel_notification = Notification(
                 employee_id=ride.driver_id,
                 ride_id=ride.id,
-                message=f'Passenger cancelled their reservation for {ride.origin} → {ride.destination} (Ride #{ride.id}). {reservation.seats_reserved} seat(s) released.',
+                message=f'Trip Cancelled: Your ride to {short_destination} was cancelled.',
                 type='cancellation',
                 is_read=False
             )
@@ -276,12 +282,14 @@ class ReservationApprove(Resource):
             
             # Update reservation status
             reservation.status = 'CONFIRMED'
+
+            short_destination = (ride.destination or '').split(',')[0].strip() or ride.destination
             
             # Create notification for the employee
             notification = Notification(
                 employee_id=reservation.employee_id,
                 ride_id=ride.id,
-                message=f'Reservation APPROVED for {ride.origin} → {ride.destination} (Ride #{ride.id}). {reservation.seats_reserved} seat(s) confirmed.',
+                message=f'Ride Approved! Your trip to {short_destination} is confirmed.',
                 type='approval',
                 is_read=False
             )
@@ -341,12 +349,14 @@ class ReservationReject(Resource):
             
             # Update reservation status (no seat changes)
             reservation.status = 'REJECTED'
+
+            short_destination = (ride.destination or '').split(',')[0].strip() or ride.destination
             
             # Create notification for the employee
             notification = Notification(
                 employee_id=reservation.employee_id,
                 ride_id=ride.id,
-                message=f'Reservation REJECTED for {ride.origin} → {ride.destination} (Ride #{ride.id}). Please find another ride.',
+                message=f'Trip Cancelled: Your ride to {short_destination} was cancelled.',
                 type='rejection',
                 is_read=False
             )
