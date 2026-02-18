@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../../../core/theme/brand_text_styles.dart';
+import '../../../core/widgets/navigation_shell.dart';
+import '../../admin/screens/admin_dashboard_screen.dart';
 import '../providers/auth_provider.dart';
 
 /// Login Screen for GExpertise Carpool - Premium Final Boss UI
@@ -46,8 +48,51 @@ class _LoginScreenState extends State<LoginScreen> {
       _validationMessage = null;
     });
 
-    // Call provider login (placeholder)
-    context.read<AuthProvider>().login(email, password);
+    _login(email, password);
+  }
+
+  Future<void> _login(String email, String password) async {
+    final provider = context.read<AuthProvider>();
+
+    final ok = await provider.login(email, password);
+    if (!mounted) return;
+
+    if (!ok) {
+      final msg = provider.errorMessage ?? 'Login failed';
+      final lower = msg.toLowerCase();
+
+      if (lower.contains('suspended') || lower.contains('frozen')) {
+        showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Account Suspended'),
+            content: Text(msg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        setState(() => _validationMessage = msg);
+      }
+
+      return;
+    }
+
+    if (provider.user?.role == 'admin') {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+        (route) => false,
+      );
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const NavigationShell()),
+        (route) => false,
+      );
+    }
   }
 
   Future<void> _testConnection() async {

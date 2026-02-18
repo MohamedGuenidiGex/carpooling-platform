@@ -83,6 +83,15 @@ class AuthProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       if (e.statusCode == 401) {
         _setError('Invalid email or password');
+      } else if (e.statusCode == 403) {
+        final message = (e.message).toLowerCase();
+        if (message.contains('suspended') || message.contains('frozen')) {
+          _setError(
+            'Your account has been suspended. Please contact IT support.',
+          );
+        } else {
+          _setError('Access denied: ${e.message}');
+        }
       } else if (e.statusCode == 0) {
         _setError('Network error. Please check your connection.');
       } else {
