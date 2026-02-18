@@ -122,12 +122,17 @@ class Login(Resource):
         if not employee or not employee.check_password(password):
             api.abort(401, 'Invalid email or password')
 
+        if employee.status == 'frozen':
+            api.abort(403, 'Your account has been suspended. Please contact IT support.')
+
         access_token = create_access_token(
             identity=str(employee.id),
             additional_claims={
                 'email': employee.email,
                 'name': employee.name,
-                'department': employee.department
+                'department': employee.department,
+                'role': employee.role,
+                'status': employee.status,
             }
         )
 

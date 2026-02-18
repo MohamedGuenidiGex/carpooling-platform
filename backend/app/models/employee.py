@@ -9,6 +9,8 @@ class Employee(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     department = db.Column(db.String(100))
     password_hash = db.Column(db.String(256))
+    role = db.Column(db.String(20), nullable=False, server_default='employee')
+    status = db.Column(db.String(20), nullable=False, server_default='active')
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
@@ -37,6 +39,8 @@ class Employee(db.Model):
             'id': self.id,
             'name': self.name,
             'email': self.email,
+            'role': self.role,
+            'status': self.status,
             'department': self.department,
             'phone_number': self.phone_number,
             'car_model': self.car_model,
