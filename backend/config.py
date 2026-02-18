@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_DEFAULT_POSTGRES_URI = 'postgresql://postgres:123@localhost:5433/carpool_db'
+
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -11,17 +13,13 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
 
 class DevelopmentConfig(Config):
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        'DATABASE_URL',
-        f"sqlite:///{os.path.join(os.getcwd(), 'instance', 'carpooling.db')}"
-    )
+    # SQLALCHEMY_DATABASE_URI = f"sqlite:///{os.path.join(os.getcwd(), 'instance', 'carpooling.db')}"
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', _DEFAULT_POSTGRES_URI)
     DEBUG = True
 
 class ProductionConfig(Config):
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        'DATABASE_URL',
-        f"sqlite:///{os.path.join(os.getcwd(), 'instance', 'carpooling.db')}"
-    )
+    # SQLALCHEMY_DATABASE_URI = f"sqlite:///{os.path.join(os.getcwd(), 'instance', 'carpooling.db')}"
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', _DEFAULT_POSTGRES_URI)
     DEBUG = False
 
 class TestingConfig(Config):

@@ -23,10 +23,10 @@ def create_app(config_name):
     init_api(app)
 
     from .utils.seed import seed_demo_data
-    with app.app_context():
-        # Create tables if they don't exist (for first run)
-        db.create_all()
-        # NOTE: Auto-seeding disabled - use reset_db.py to seed test users manually
-        # seed_demo_data()
+    # with app.app_context():
+    #     # Create tables if they don't exist (for first run)
+    #     db.create_all()
+    #     # NOTE: Auto-seeding disabled - use reset_db.py to seed test users manually
+    #     # seed_demo_data()
 
     return app
