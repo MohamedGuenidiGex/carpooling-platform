@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/network/api_client.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../../../core/theme/brand_colors.dart';
 import '../../../core/theme/brand_text_styles.dart';
 import '../../../core/widgets/navigation_shell.dart';
@@ -18,15 +18,24 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with AutomaticKeepAliveClientMixin<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   String? _validationMessage;
-  String? _connectionStatus;
-  bool _isTestingConnection = false;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('*** LoginScreen: initState called ***');
+  }
 
   @override
   void dispose() {
+    debugPrint('*** LoginScreen: dispose called ***');
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -54,77 +63,51 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login(String email, String password) async {
     final provider = context.read<AuthProvider>();
 
-    final ok = await provider.login(email, password);
-    if (!mounted) return;
-
-    if (!ok) {
-      final msg = provider.errorMessage ?? 'Login failed';
-      final lower = msg.toLowerCase();
-
-      if (lower.contains('suspended') || lower.contains('frozen')) {
-        showDialog<void>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Account Suspended'),
-            content: Text(msg),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-      } else {
-        setState(() => _validationMessage = msg);
-      }
-
-      return;
-    }
-
-    if (provider.user?.role == 'admin') {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
-        (route) => false,
-      );
-    } else {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const NavigationShell()),
-        (route) => false,
-      );
-    }
-  }
-
-  Future<void> _testConnection() async {
+    // Clear any previous error first
     setState(() {
-      _isTestingConnection = true;
-      _connectionStatus = 'Testing connection...';
+      _validationMessage = null;
     });
 
     try {
-      final result = await ApiClient.get('/rides/');
+      await provider.login(email, password);
+      // Login successful - navigate based on role
+      if (mounted) {
+        final user = provider.user;
+        if (user != null && user.role == 'admin') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const NavigationShell()),
+          );
+        }
+      }
+    } on Exception catch (e) {
+      debugPrint('*** LoginScreen: Exception caught: $e ***');
+      if (!mounted) {
+        debugPrint('*** LoginScreen: not mounted, returning ***');
+        return;
+      }
+      final msg = e.toString().replaceAll('Exception: ', '');
+      debugPrint('*** LoginScreen: Setting _validationMessage to: $msg ***');
       setState(() {
-        _connectionStatus =
-            'Connection OK: ${result.toString().substring(0, result.toString().length > 50 ? 50 : result.toString().length)}...';
+        _validationMessage = msg.isNotEmpty
+            ? msg
+            : 'Login failed. Please try again.';
       });
-    } on ApiException catch (e) {
-      setState(() {
-        _connectionStatus =
-            'Connection failed: ${e.message} (Status: ${e.statusCode})';
-      });
-    } catch (e) {
-      setState(() {
-        _connectionStatus = 'Connection error: $e';
-      });
-    } finally {
-      setState(() {
-        _isTestingConnection = false;
-      });
+      debugPrint('*** LoginScreen: setState completed ***');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    debugPrint(
+      '*** LoginScreen: build called, _validationMessage=$_validationMessage ***',
+    );
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -190,48 +173,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // Premium Login Button
                 _buildPremiumLoginButton(),
-
-                const SizedBox(height: 24),
-
-                // Connection Test Section - PRESERVED EXACTLY AS IS
-                const Divider(),
-                const SizedBox(height: 16),
-                Text(
-                  'Backend Connection Test',
-                  style: BrandTextStyles.body,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: _isTestingConnection ? null : _testConnection,
-                  icon: _isTestingConnection
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.network_check),
-                  label: Text(
-                    _isTestingConnection ? 'Testing...' : 'Test Connection',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: BrandColors.darkGray,
-                    foregroundColor: BrandColors.white,
-                  ),
-                ),
-                if (_connectionStatus != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      _connectionStatus!,
-                      style: BrandTextStyles.body.copyWith(
-                        color: _connectionStatus!.startsWith('Connection OK')
-                            ? BrandColors.success
-                            : BrandColors.error,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
               ],
             ),
           ),

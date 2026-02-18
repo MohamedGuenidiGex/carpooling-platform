@@ -204,8 +204,8 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -216,7 +216,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                 hint: 'Enter departure location',
                 icon: Icons.location_on_outlined,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
 
               // Destination Field
               _buildInputField(
@@ -225,7 +225,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                 hint: 'Enter destination',
                 icon: Icons.flag_outlined,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
 
               // Date & Time Row
               Row(
@@ -240,7 +240,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                       onTap: _pickDate,
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 10),
                   // Time Picker
                   Expanded(
                     child: _buildPickerField(
@@ -253,25 +253,25 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 10),
 
               // Passengers Counter
               _buildPassengerCounter(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 10),
 
               // Ride Type Toggle
               _buildRideTypeToggle(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 10),
 
               // Comments Field
               _buildInputField(
                 controller: _commentsController,
-                label: 'Comments / Notes',
-                hint: 'Meeting point, preferences, etc.',
+                label: 'Comments (Optional)',
+                hint: 'Meeting point, preferences...',
                 icon: Icons.notes_outlined,
-                maxLines: 3,
+                maxLines: 1,
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 12),
 
               // Publish Button with loading state
               _buildPublishButton(),
@@ -294,39 +294,39 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
       controller: controller,
       maxLines: maxLines,
       style: const TextStyle(
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: FontWeight.w500,
         color: BrandColors.black,
       ),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: Colors.grey[500]),
+        prefixIcon: Icon(icon, color: Colors.grey[500], size: 18),
         filled: true,
         fillColor: Colors.grey[50],
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 18,
+          horizontal: 12,
+          vertical: 10,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: BrandColors.primaryRed, width: 2),
         ),
         labelStyle: TextStyle(
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.w500,
           color: Colors.grey[600],
         ),
         hintStyle: TextStyle(
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.w400,
           color: Colors.grey[400],
         ),
@@ -348,42 +348,42 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         child: TextField(
           controller: controller,
           style: const TextStyle(
-            fontSize: 16,
+            fontSize: 14,
             fontWeight: FontWeight.w500,
             color: BrandColors.black,
           ),
           decoration: InputDecoration(
             labelText: label,
             hintText: hint,
-            prefixIcon: Icon(icon, color: Colors.grey[500]),
+            prefixIcon: Icon(icon, color: Colors.grey[500], size: 18),
             filled: true,
             fillColor: Colors.grey[50],
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 18,
+              horizontal: 14,
+              vertical: 14,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               borderSide: const BorderSide(
                 color: BrandColors.primaryRed,
                 width: 2,
               ),
             ),
             labelStyle: TextStyle(
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: FontWeight.w500,
               color: Colors.grey[600],
             ),
             hintStyle: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w400,
               color: Colors.grey[400],
             ),
@@ -396,10 +396,10 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   /// Build sleek passenger counter
   Widget _buildPassengerCounter() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey[300]!),
       ),
       child: Row(
@@ -407,12 +407,12 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.person_outline, color: Colors.grey[500], size: 24),
-              const SizedBox(width: 12),
+              Icon(Icons.person_outline, color: Colors.grey[500], size: 20),
+              const SizedBox(width: 8),
               Text(
-                'Available Seats',
+                'Seats',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: Colors.grey[600],
                 ),
@@ -428,17 +428,17 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                     ? () => setState(() => _passengerCount--)
                     : null,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 10),
               // Count display
               Text(
                 '$_passengerCount',
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: BrandColors.black,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 10),
               // Increase button
               _buildCounterButton(
                 icon: Icons.add,
@@ -459,15 +459,15 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     required VoidCallback? onPressed,
   }) {
     return Container(
-      width: 36,
-      height: 36,
+      width: 28,
+      height: 28,
       decoration: BoxDecoration(
         color: onPressed != null ? BrandColors.primaryRed : Colors.grey[300],
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: IconButton(
         onPressed: onPressed,
-        icon: Icon(icon, size: 18, color: BrandColors.white),
+        icon: Icon(icon, size: 14, color: BrandColors.white),
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(),
       ),
@@ -477,10 +477,10 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
   /// Build ride type toggle (One-time vs Regular)
   Widget _buildRideTypeToggle() {
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
@@ -489,18 +489,18 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
             child: GestureDetector(
               onTap: () => setState(() => _isRegular = false),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: !_isRegular
                       ? BrandColors.primaryRed
                       : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   'One-time',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: !_isRegular ? BrandColors.white : Colors.grey[600],
                   ),
@@ -513,18 +513,18 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
             child: GestureDetector(
               onTap: () => setState(() => _isRegular = true),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: _isRegular
                       ? BrandColors.primaryRed
                       : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   'Regular',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: _isRegular ? BrandColors.white : Colors.grey[600],
                   ),
@@ -544,31 +544,31 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
             color: BrandColors.primaryRed.withOpacity(0.15),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
             spreadRadius: -4,
           ),
         ],
       ),
       child: Material(
         color: isLoading ? Colors.grey[400] : BrandColors.primaryRed,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: isLoading ? null : _publishRide,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18),
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: isLoading
                 ? const SizedBox(
-                    height: 22,
+                    height: 18,
                     child: Center(
                       child: CircularProgressIndicator(
                         color: BrandColors.white,
-                        strokeWidth: 2.5,
+                        strokeWidth: 2,
                       ),
                     ),
                   )
@@ -577,7 +577,7 @@ class _OfferRideScreenState extends State<OfferRideScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: BrandColors.white,
-                      fontSize: 18,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
                     ),

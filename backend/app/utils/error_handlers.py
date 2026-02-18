@@ -37,7 +37,11 @@ def handle_unauthorized(e):
 def handle_forbidden(e):
     """Handle 403 forbidden errors."""
     error_code = 'FORBIDDEN'
-    message = str(e.description) if hasattr(e, 'description') else 'Access denied'
+    # Try to get custom message from Flask-RESTX data attribute
+    if hasattr(e, 'data') and e.data:
+        message = e.data.get('message', str(e.description) if hasattr(e, 'description') else 'Access denied')
+    else:
+        message = str(e.description) if hasattr(e, 'description') else 'Access denied'
     return make_error_response(error_code, message, 403)
 
 def handle_not_found(e):

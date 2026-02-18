@@ -52,8 +52,8 @@ class AuthProvider extends ChangeNotifier {
   ///
   /// Posts credentials to /auth/login endpoint.
   /// On success: stores token, updates state, clears error.
-  /// On failure: sets errorMessage, keeps user logged out.
-  Future<bool> login(String email, String password) async {
+  /// On failure: throws Exception with error message.
+  Future<void> login(String email, String password) async {
     _setLoading(true);
     _clearError();
 
@@ -66,8 +66,7 @@ class AuthProvider extends ChangeNotifier {
       // Extract token from response
       final token = response['access_token'] as String?;
       if (token == null) {
-        _setError('Invalid response: missing token');
-        return false;
+        throw Exception('Invalid response: missing token');
       }
 
       // Store token securely
@@ -78,31 +77,39 @@ class AuthProvider extends ChangeNotifier {
       _isAuthenticated = true;
       _user = User.fromJson(response['employee'] as Map<String, dynamic>);
 
+      _setLoading(false);
       notifyListeners();
-      return true;
     } on ApiException catch (e) {
+      _token = null;
+      _isAuthenticated = false;
+      _user = null;
+
+      String errorMsg;
       if (e.statusCode == 401) {
-        _setError('Invalid email or password');
+        errorMsg = 'Invalid email or password';
       } else if (e.statusCode == 403) {
         final message = (e.message).toLowerCase();
         if (message.contains('suspended') || message.contains('frozen')) {
-          _setError(
-            'Your account has been suspended. Please contact IT support.',
-          );
+          errorMsg =
+              'Your account has been suspended. Please contact IT support.';
         } else {
-          _setError('Access denied: ${e.message}');
+          errorMsg = 'Access denied: ${e.message}';
         }
       } else if (e.statusCode == 0) {
-        _setError('Network error. Please check your connection.');
+        errorMsg = 'Network error. Please check your connection.';
       } else {
-        _setError('Login failed: ${e.message}');
+        errorMsg = 'Login failed: ${e.message}';
       }
-      return false;
-    } catch (e) {
-      _setError('Unexpected error: $e');
-      return false;
-    } finally {
+
       _setLoading(false);
+      throw Exception(errorMsg);
+    } catch (e) {
+      _token = null;
+      _isAuthenticated = false;
+      _user = null;
+
+      _setLoading(false);
+      throw Exception('Unexpected error: $e');
     }
   }
 

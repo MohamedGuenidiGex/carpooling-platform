@@ -87,6 +87,29 @@ class ApiClient {
     }
   }
 
+  /// Perform a PUT request
+  ///
+  /// [body] will be JSON encoded automatically.
+  /// Returns parsed JSON or throws an exception on error.
+  static Future<dynamic> put(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final headers = await _buildHeaders();
+
+      final response = await http.put(
+        uri,
+        headers: headers,
+        body: body != null ? jsonEncode(body) : null,
+      );
+      return _handleResponse(response);
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   /// Temporary connectivity test method
   ///
   /// Tests connection to /rides/ endpoint and logs result.
@@ -138,13 +161,17 @@ class ApiClient {
 
   /// Parse error message from response body
   static String _parseErrorMessage(String body) {
+    debugPrint('ApiClient: Parsing error response body: $body');
     try {
       final data = jsonDecode(body);
       if (data is Map<String, dynamic>) {
-        return data['message'] ?? data['error'] ?? 'Unknown error';
+        final message = data['message'] ?? data['error'] ?? 'Unknown error';
+        debugPrint('ApiClient: Extracted message: $message');
+        return message;
       }
       return body;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('ApiClient: JSON parse failed: $e');
       return body.isNotEmpty ? body : 'Request failed';
     }
   }

@@ -110,7 +110,6 @@ class Register(Resource):
 class Login(Resource):
     @api.doc('login', description='Authenticate employee and get JWT token')
     @api.expect(login_request)
-    @api.marshal_with(login_response)
     def post(self):
         """Login and get JWT token"""
         data = request.get_json() or {}
@@ -124,10 +123,17 @@ class Login(Resource):
         employee = Employee.query.filter_by(email=email).first()
 
         if not employee or not employee.check_password(password):
-            api.abort(401, 'Invalid email or password')
+            api.abort(
+                401,
+                error='INVALID_CREDENTIALS',
+                message='Invalid email or password',
+            )
 
         if employee.status == 'frozen':
-            api.abort(403, 'Your account has been suspended. Please contact IT support.')
+            return {
+                'error': 'ACCOUNT_FROZEN',
+                'message': 'Your account has been suspended. Please contact IT support.',
+            }, 403
 
         access_token = create_access_token(
             identity=str(employee.id),
@@ -147,10 +153,11 @@ class Login(Resource):
             details={'email': employee.email}
         )
 
+        # Return manually marshalled response
         return {
             'access_token': access_token,
             'token_type': 'Bearer',
-            'employee': employee
+            'employee': employee.to_dict(),
         }, 200
 
 
