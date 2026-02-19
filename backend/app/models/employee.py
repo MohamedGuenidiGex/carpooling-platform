@@ -13,6 +13,7 @@ class Employee(db.Model):
     status = db.Column(db.String(20), nullable=False, server_default='active')
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+    last_seen_at = db.Column(db.DateTime, nullable=True)
 
     # Carpool profile fields
     phone_number = db.Column(db.String(20))
@@ -46,7 +47,8 @@ class Employee(db.Model):
             'car_model': self.car_model,
             'car_plate': self.car_plate,
             'car_color': self.car_color,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_seen_at': self.last_seen_at.isoformat() if self.last_seen_at else None
         }
         
         if include_stats:

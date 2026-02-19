@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/auth_storage.dart';
 import '../models/user_model.dart';
+import '../screens/login_screen.dart';
 
 /// Authentication Provider for GExpertise Carpool
 ///
@@ -172,12 +173,15 @@ class AuthProvider extends ChangeNotifier {
   /// Logout the current user
   ///
   /// Clears token from secure storage and resets all auth state.
-  Future<void> logout() async {
+  /// Then navigates to login screen.
+  Future<void> logout(BuildContext context) async {
+    debugPrint('AuthProvider: Starting logout...');
     _setLoading(true);
 
     try {
       // Clear token from secure storage
       await AuthStorage.clearToken();
+      debugPrint('AuthProvider: Token cleared from storage');
 
       // Reset all state
       _token = null;
@@ -185,8 +189,21 @@ class AuthProvider extends ChangeNotifier {
       _user = null;
       _clearError();
 
+      debugPrint(
+        'AuthProvider: State reset - isAuthenticated: $_isAuthenticated',
+      );
       notifyListeners();
+      debugPrint('AuthProvider: Logout complete, listeners notified');
+
+      // Navigate to login screen explicitly
+      if (context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+      }
     } catch (e) {
+      debugPrint('AuthProvider: Logout failed with error: $e');
       _setError('Logout failed: $e');
     } finally {
       _setLoading(false);

@@ -1,6 +1,8 @@
 from app.extensions import api, configure_error_handlers
 from .auth import api as auth_ns
 from .admin import api as admin_ns
+from .admin_analytics import api as admin_analytics_ns
+from .admin_monitoring import api as admin_monitoring_ns
 from .employees import api as employees_ns
 from .users import api as users_ns
 from .rides import api as rides_ns
@@ -14,6 +16,8 @@ def init_api(app):
     
     api.add_namespace(auth_ns, path="/auth")
     api.add_namespace(admin_ns, path="/admin")
+    api.add_namespace(admin_analytics_ns, path="/admin/analytics")
+    api.add_namespace(admin_monitoring_ns, path="/admin/monitoring")
     api.add_namespace(employees_ns, path="/employees")
     api.add_namespace(users_ns, path="/users")
     api.add_namespace(rides_ns, path="/rides")

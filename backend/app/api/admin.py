@@ -1,9 +1,14 @@
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from sqlalchemy import func
 
 from app.extensions import db
 from app.models import Employee, Ride, Reservation
+from app.services.system_metrics_service import (
+    get_total_users,
+    get_active_rides as get_service_active_rides,
+    get_total_rides,
+    get_total_reservations,
+)
 
 api = Namespace('admin', description='Admin operations and statistics')
 
@@ -43,14 +48,13 @@ def require_admin():
         return {'error': 'FORBIDDEN', 'message': 'Admin access required'}, 403
     return current_user
 
-admin_stats_response = api.model('AdminStatsResponse', {
-    'total_employees': fields.Integer(description='Total number of employees'),
+# Dashboard stats response model
+dashboard_stats_response = api.model('DashboardStatsResponse', {
+    'total_users': fields.Integer(description='Total number of users/employees'),
+    'active_users': fields.Integer(description='Count of active users'),
     'total_rides': fields.Integer(description='Total number of rides'),
-    'active_rides': fields.Integer(description='Rides with status ACTIVE or FULL'),
-    'completed_rides': fields.Integer(description='Rides with status COMPLETED'),
     'total_reservations': fields.Integer(description='Total number of reservations'),
-    'cancelled_reservations': fields.Integer(description='Reservations with status CANCELLED'),
-    'average_occupancy_rate': fields.Float(description='Percentage of seats filled across all rides')
+    'co2_saved_kg': fields.Integer(description='Estimated CO2 saved in kg (reservations * 2.5)')
 })
 
 
@@ -63,49 +67,29 @@ class AdminStats(Resource):
             500: ('Internal server error', error_response)
         }
     )
-    @api.marshal_with(admin_stats_response)
+    @api.marshal_with(dashboard_stats_response)
     def get(self):
-        """Get aggregated platform statistics"""
-        # Total counts
-        total_employees = Employee.query.count()
-        total_rides = Ride.query.count()
-        total_reservations = Reservation.query.count()
+        """Get aggregated platform statistics for dashboard"""
+        # Verify admin access
+        result = require_admin()
+        if isinstance(result, tuple):  # Error response
+            return result
         
-        # Ride status counts
-        active_rides = Ride.query.filter(Ride.status.in_(['ACTIVE', 'FULL'])).count()
-        completed_rides = Ride.query.filter_by(status='COMPLETED').count()
+        # Use shared metrics service for consistency
+        total_users = get_total_users()
+        active_rides = get_service_active_rides()
+        total_rides = get_total_rides()
+        total_reservations = get_total_reservations()
         
-        # Reservation status counts
-        cancelled_reservations = Reservation.query.filter_by(status='CANCELLED').count()
-        
-        # Calculate average occupancy rate
-        # Get total capacity and total reserved seats
-        rides_with_capacity = db.session.query(
-            func.sum(Ride.available_seats).label('total_available'),
-            func.count(Ride.id).label('ride_count')
-        ).filter(Ride.status != 'COMPLETED').first()
-        
-        total_reserved = db.session.query(
-            func.sum(Reservation.seats_reserved)
-        ).filter(Reservation.status == 'CONFIRMED').scalar() or 0
-        
-        # Calculate occupancy: reserved / (available + reserved) * 100
-        total_available = rides_with_capacity.total_available or 0
-        total_capacity = total_available + total_reserved
-        
-        if total_capacity > 0:
-            average_occupancy_rate = round((total_reserved / total_capacity) * 100, 2)
-        else:
-            average_occupancy_rate = 0.0
+        # Calculate CO2 saved: each reservation saves ~2.5kg
+        co2_saved_kg = int(total_reservations * 2.5)
         
         return {
-            'total_employees': total_employees,
+            'total_users': total_users,
+            'active_users': active_rides,  # Using active_rides as active_users for consistency
             'total_rides': total_rides,
-            'active_rides': active_rides,
-            'completed_rides': completed_rides,
             'total_reservations': total_reservations,
-            'cancelled_reservations': cancelled_reservations,
-            'average_occupancy_rate': average_occupancy_rate
+            'co2_saved_kg': co2_saved_kg
         }
 
 

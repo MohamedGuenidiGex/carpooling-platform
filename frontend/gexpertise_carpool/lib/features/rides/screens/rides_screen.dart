@@ -141,6 +141,7 @@ class _RidesScreenState extends State<RidesScreen> {
   }
 
   void _onPositionDetermined(Position position) {
+    if (!mounted) return;
     final newPosition = LatLng(position.latitude, position.longitude);
     setState(() {
       _currentPosition = newPosition;
