@@ -13,7 +13,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -22,6 +21,15 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Python virtual environments (some tools create a top-level lib/ directory)
+env/lib/
+venv/lib/
+.venv/lib/
+ENV/lib/
+
+# Do not ignore Flutter/Dart source directories named lib/
+!frontend/**/lib/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
