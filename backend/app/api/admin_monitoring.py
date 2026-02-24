@@ -47,6 +47,10 @@ error_response = api.model('ErrorResponse', {
     'message': fields.String(description='Error message')
 })
 
+heartbeat_response_model = api.model('HeartbeatResponse', {
+    'success': fields.Boolean(description='Whether the heartbeat was recorded')
+})
+
 
 def require_admin():
     """Verify current user is admin."""
@@ -97,7 +101,7 @@ class Heartbeat(Resource):
         security='Bearer',
         description='Update user activity timestamp (call periodically to show online)',
         responses={
-            200: ('Heartbeat recorded', {'success': fields.Boolean}),
+            200: ('Heartbeat recorded', heartbeat_response_model),
             401: ('Unauthorized - JWT required', error_response),
             500: ('Internal server error', error_response)
         }
