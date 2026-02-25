@@ -384,7 +384,6 @@ class RideCancel(Resource):
             500: ('Internal server error', error_response)
         }
     )
-    @api.marshal_with(ride_response)
     def patch(self, id):
         """Cancel a ride (only the driver can cancel)"""
         employee_id = int(get_jwt_identity())
@@ -447,7 +446,7 @@ class RideCancel(Resource):
                 updated_at=datetime.utcnow().isoformat()
             )
             
-            return ride, 200
+            return serialize_ride_with_reservations(ride), 200
             
         except HTTPException:
             # Re-raise HTTP exceptions (403, 404, 400) without modification
