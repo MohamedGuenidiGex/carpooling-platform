@@ -43,6 +43,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
       if (currentUserId != null) {
         await context.read<ReservationProvider>().getMyReservations(
           currentUserId,
+          includeRide: true,
         );
       }
     }

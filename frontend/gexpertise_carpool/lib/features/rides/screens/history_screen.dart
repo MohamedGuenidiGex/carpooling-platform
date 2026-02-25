@@ -48,7 +48,10 @@ class _HistoryScreenState extends State<HistoryScreen>
 
     if (userId != null) {
       context.read<RideProvider>().getMyOfferedRides(userId);
-      context.read<ReservationProvider>().getMyReservations(userId);
+      context.read<ReservationProvider>().getMyReservations(
+        userId,
+        includeRide: true,
+      );
     }
   }
 
@@ -59,7 +62,10 @@ class _HistoryScreenState extends State<HistoryScreen>
     if (userId != null) {
       await Future.wait([
         context.read<RideProvider>().getMyOfferedRides(userId),
-        context.read<ReservationProvider>().getMyReservations(userId),
+        context.read<ReservationProvider>().getMyReservations(
+          userId,
+          includeRide: true,
+        ),
       ]);
     }
   }
