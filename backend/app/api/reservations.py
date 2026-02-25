@@ -32,19 +32,47 @@ reservation_response = api.model('ReservationResponse', {
     'created_at': fields.DateTime(description='Creation timestamp')
 })
 
+# Nested models for detailed reservation response
+driver_info = api.model('DriverInfo', {
+    'id': fields.Integer(description='Driver ID'),
+    'name': fields.String(description='Driver name'),
+    'email': fields.String(description='Driver email')
+})
+
+ride_info = api.model('RideInfo', {
+    'id': fields.Integer(description='Ride ID'),
+    'driver_id': fields.Integer(description='Driver ID'),
+    'origin': fields.String(description='Origin location'),
+    'destination': fields.String(description='Destination location'),
+    'departure_time': fields.DateTime(description='Departure time'),
+    'available_seats': fields.Integer(description='Available seats'),
+    'status': fields.String(description='Ride status'),
+    'driver': fields.Nested(driver_info, description='Driver information')
+})
+
+reservation_with_ride_response = api.model('ReservationWithRideResponse', {
+    'id': fields.Integer(description='Reservation ID'),
+    'employee_id': fields.Integer(description='Employee ID of the rider'),
+    'ride_id': fields.Integer(description='Ride ID reserved'),
+    'seats_reserved': fields.Integer(description='Seats reserved'),
+    'status': fields.String(description='Reservation status (PENDING/CONFIRMED/CANCELLED/REJECTED)'),
+    'created_at': fields.DateTime(description='Creation timestamp'),
+    'ride': fields.Nested(ride_info, description='Ride details')
+})
+
 @api.route('/')
 class ReservationList(Resource):
     @jwt_required()
     @api.doc('list_reservations', security='Bearer',
         params={
-            'employee_id': {'description': 'Filter by employee ID (for getting my bookings)', 'type': 'integer', 'required': False}
+            'employee_id': {'description': 'Filter by employee ID (for getting my bookings)', 'type': 'integer', 'required': False},
+            'include_ride': {'description': 'Include ride details in response', 'type': 'boolean', 'required': False, 'default': False}
         },
         responses={
             401: ('Unauthorized - JWT required', error_response),
             500: ('Internal server error', error_response)
         }
     )
-    @api.marshal_list_with(reservation_response)
     def get(self):
         """List all reservations with optional filtering"""
         query = Reservation.query
@@ -58,7 +86,50 @@ class ReservationList(Resource):
                 api.abort(400, 'employee_id must be an integer')
 
         reservations = query.all()
-        return reservations
+        
+        # Check if ride details should be included
+        include_ride = request.args.get('include_ride', 'false').lower() == 'true'
+        
+        if include_ride:
+            # Return reservations with ride details
+            result = []
+            for reservation in reservations:
+                ride = Ride.query.get(reservation.ride_id)
+                driver = Employee.query.get(ride.driver_id) if ride else None
+                
+                result.append({
+                    'id': reservation.id,
+                    'employee_id': reservation.employee_id,
+                    'ride_id': reservation.ride_id,
+                    'seats_reserved': reservation.seats_reserved,
+                    'status': reservation.status,
+                    'created_at': reservation.created_at.isoformat() if reservation.created_at else None,
+                    'ride': {
+                        'id': ride.id,
+                        'driver_id': ride.driver_id,
+                        'origin': ride.origin,
+                        'destination': ride.destination,
+                        'departure_time': ride.departure_time.isoformat() if ride.departure_time else None,
+                        'available_seats': ride.available_seats,
+                        'status': ride.status,
+                        'driver': {
+                            'id': driver.id,
+                            'name': driver.name,
+                            'email': driver.email
+                        } if driver else None
+                    } if ride else None
+                })
+            return result
+        else:
+            # Return basic reservations without ride details
+            return [{
+                'id': r.id,
+                'employee_id': r.employee_id,
+                'ride_id': r.ride_id,
+                'seats_reserved': r.seats_reserved,
+                'status': r.status,
+                'created_at': r.created_at.isoformat() if r.created_at else None
+            } for r in reservations]
 
     @jwt_required()
     @api.doc('create_reservation', security='Bearer', description='Request a seat on a ride. Creates PENDING reservation. Driver must approve.',
