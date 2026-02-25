@@ -48,8 +48,14 @@ class _HomeScreenState extends State<HomeScreen> {
     ReservationProvider reservationProvider,
   ) async {
     try {
-      if (currentUserId == null) return;
+      if (currentUserId == null) {
+        debugPrint(
+          'HomeScreen: currentUserId is null, skipping active ride fetch',
+        );
+        return;
+      }
 
+      debugPrint('HomeScreen: Fetching active rides for user $currentUserId');
       final List<Ride> candidateRides = [];
 
       // STEP 1: Fetch rides where user is driver
@@ -57,29 +63,50 @@ class _HomeScreenState extends State<HomeScreen> {
       final offeredRides = rideProvider.myOfferedRides
           .where((ride) => _isRideActive(ride.status ?? ''))
           .toList();
+      debugPrint(
+        'HomeScreen: Found ${offeredRides.length} active offered rides',
+      );
       candidateRides.addAll(offeredRides);
 
       // STEP 2: Fetch rides where user is passenger with confirmed reservation
       final confirmedReservations = await reservationProvider
           .getMyConfirmedReservationsWithRides(currentUserId!);
+      debugPrint(
+        'HomeScreen: Found ${confirmedReservations.length} confirmed reservations',
+      );
 
       for (final reservation in confirmedReservations) {
-        if (reservation.ride != null &&
-            _isRideActive(reservation.ride!.status ?? '')) {
-          candidateRides.add(reservation.ride!);
+        if (reservation.ride != null) {
+          debugPrint(
+            'HomeScreen: Reservation ${reservation.id} has ride ${reservation.ride!.id} with status ${reservation.ride!.status}',
+          );
+          if (_isRideActive(reservation.ride!.status ?? '')) {
+            candidateRides.add(reservation.ride!);
+            debugPrint(
+              'HomeScreen: Added ride ${reservation.ride!.id} from reservation',
+            );
+          }
         }
       }
 
       // STEP 3: Filter for active rides and sort by nearest upcoming
       candidateRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+      debugPrint(
+        'HomeScreen: Total ${candidateRides.length} active rides found',
+      );
 
       if (candidateRides.isNotEmpty) {
+        debugPrint(
+          'HomeScreen: Setting active ride to ${candidateRides.first.id}',
+        );
         if (mounted) {
           setState(() => activeRide = candidateRides.first);
         }
+      } else {
+        debugPrint('HomeScreen: No active rides found');
       }
     } catch (e) {
-      debugPrint('Error fetching active ride: $e');
+      debugPrint('HomeScreen: Error fetching active ride: $e');
     }
   }
 
