@@ -1,8 +1,9 @@
 """Centralized error handlers for standardized API error responses."""
 import logging
-from flask import jsonify
+from flask import jsonify, request
 from werkzeug.exceptions import BadRequest, NotFound, Unauthorized, Forbidden, InternalServerError, HTTPException
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+from app.utils.logger import log_action
 
 # Error code mapping
 ERROR_CODES = {
@@ -54,6 +55,15 @@ def handle_internal_error(e):
     """Handle 500 internal server errors."""
     error_code = 'INTERNAL_ERROR'
     message = str(e.description) if hasattr(e, 'description') else 'Internal server error'
+    
+    # Log the error with context
+    method = request.method
+    path = request.path
+    log_action(
+        action=f'ERROR_{method}_{path.replace("/", "_").upper()}',
+        details={'error': str(e), 'status_code': 500}
+    )
+    
     return make_error_response(error_code, message, 500)
 
 def handle_jwt_expired(e):
