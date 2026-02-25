@@ -128,8 +128,11 @@ class RideList(Resource):
     @api.marshal_with(paginated_rides_response)
     def get(self):
         """List all rides with optional filtering, sorting, and pagination"""
-        # Exclude soft-deleted rides
-        query = Ride.query.filter(Ride.is_deleted == False)
+        # Exclude soft-deleted rides and completed/cancelled rides
+        query = Ride.query.filter(
+            (Ride.is_deleted == False) &
+            (Ride.status.notin_(['completed', 'cancelled', 'COMPLETED', 'CANCELLED']))
+        )
 
         # Origin/destination filters
         origin = request.args.get('origin')
@@ -149,28 +152,51 @@ class RideList(Resource):
             except ValueError:
                 api.abort(400, 'driver_id must be an integer')
 
-        # Date range filters
+        # Date range filters - support both date-only and datetime formats
         date_from = request.args.get('date_from')
         date_to = request.args.get('date_to')
 
         if date_from:
             try:
-                date_from_dt = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                # Handle both date-only (YYYY-MM-DD) and datetime formats
+                if 'T' in date_from:
+                    date_from_dt = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                else:
+                    # Parse date-only format and set to start of day
+                    date_from_dt = datetime.fromisoformat(f'{date_from}T00:00:00')
                 query = query.filter(Ride.departure_time >= date_from_dt)
             except ValueError:
-                api.abort(400, 'Invalid date_from format. Use ISO datetime (e.g., 2026-02-10T10:00:00)')
+                api.abort(400, 'Invalid date_from format. Use ISO date (YYYY-MM-DD) or datetime (2026-02-10T10:00:00)')
 
         if date_to:
             try:
-                date_to_dt = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                # Handle both date-only (YYYY-MM-DD) and datetime formats
+                if 'T' in date_to:
+                    date_to_dt = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                else:
+                    # Parse date-only format and set to end of day
+                    date_to_dt = datetime.fromisoformat(f'{date_to}T23:59:59')
                 query = query.filter(Ride.departure_time <= date_to_dt)
             except ValueError:
-                api.abort(400, 'Invalid date_to format. Use ISO datetime (e.g., 2026-02-10T10:00:00)')
+                api.abort(400, 'Invalid date_to format. Use ISO date (YYYY-MM-DD) or datetime (2026-02-10T10:00:00)')
 
         # Validate date range
         if date_from and date_to:
-            if datetime.fromisoformat(date_from.replace('Z', '+00:00')) > datetime.fromisoformat(date_to.replace('Z', '+00:00')):
-                api.abort(400, 'date_from cannot be later than date_to')
+            try:
+                if 'T' in date_from:
+                    date_from_dt = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                else:
+                    date_from_dt = datetime.fromisoformat(f'{date_from}T00:00:00')
+                
+                if 'T' in date_to:
+                    date_to_dt = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                else:
+                    date_to_dt = datetime.fromisoformat(f'{date_to}T23:59:59')
+                
+                if date_from_dt > date_to_dt:
+                    api.abort(400, 'date_from cannot be later than date_to')
+            except ValueError:
+                api.abort(400, 'Invalid date format in range validation')
 
         # Sorting
         sort_by = request.args.get('sort_by', 'date_asc')
