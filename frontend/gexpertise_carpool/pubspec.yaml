@@ -42,6 +42,9 @@ dependencies:
   
   # State management
   provider: ^6.1.1
+  
+  # Date formatting
+  intl: ^0.18.0
 
   # Maps
   flutter_map: ^6.0.0
@@ -118,3 +121,4 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+

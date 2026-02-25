@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/core/theme/brand_colors.dart';
-import 'package:gexpertise_carpool/core/services/websocket_service.dart';
 
 class TripCard extends StatefulWidget {
   final Ride activeRide;
