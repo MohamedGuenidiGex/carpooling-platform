@@ -4,7 +4,7 @@ import 'package:gexpertise_carpool/features/auth/providers/auth_provider.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/widgets/trip_card.dart';
-import 'package:gexpertise_carpool/features/dashboard/screens/dashboard_screen.dart';
+import 'package:gexpertise_carpool/features/reservations/providers/reservation_provider.dart';
 import '../theme/brand_text_styles.dart';
 
 /// Home Screen for GExpertise Carpool MVP
@@ -30,11 +30,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void _initializeScreen() async {
     final authProvider = context.read<AuthProvider>();
     final rideProvider = context.read<RideProvider>();
+    final reservationProvider = context.read<ReservationProvider>();
 
     currentUserId = authProvider.user?.id;
 
     if (currentUserId != null) {
-      await _fetchActiveRide(rideProvider);
+      await _fetchActiveRide(rideProvider, reservationProvider);
     }
 
     if (mounted) {
@@ -42,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _fetchActiveRide(RideProvider rideProvider) async {
+  Future<void> _fetchActiveRide(
+    RideProvider rideProvider,
+    ReservationProvider reservationProvider,
+  ) async {
     try {
       if (currentUserId == null) return;
 
@@ -56,8 +60,15 @@ class _HomeScreenState extends State<HomeScreen> {
       candidateRides.addAll(offeredRides);
 
       // STEP 2: Fetch rides where user is passenger with confirmed reservation
-      // This will be implemented when reservation provider is available
-      // For now, we'll use the offered rides only
+      final confirmedReservations = await reservationProvider
+          .getMyConfirmedReservationsWithRides(currentUserId!);
+
+      for (final reservation in confirmedReservations) {
+        if (reservation.ride != null &&
+            _isRideActive(reservation.ride!.status ?? '')) {
+          candidateRides.add(reservation.ride!);
+        }
+      }
 
       // STEP 3: Filter for active rides and sort by nearest upcoming
       candidateRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));

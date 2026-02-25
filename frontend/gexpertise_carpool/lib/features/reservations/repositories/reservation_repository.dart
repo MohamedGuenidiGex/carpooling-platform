@@ -28,9 +28,13 @@ class ReservationRepository {
   /// Get reservations for a specific employee
   ///
   /// GET /reservations/?employee_id={employeeId}
-  Future<List<Reservation>> getMyReservations(int employeeId) async {
+  Future<List<Reservation>> getMyReservations(
+    int employeeId, {
+    bool includeRide = false,
+  }) async {
     try {
-      final endpoint = '/reservations/?employee_id=$employeeId';
+      final endpoint =
+          '/reservations/?employee_id=$employeeId&include_ride=${includeRide.toString()}';
       final response = await ApiClient.get(endpoint);
 
       final reservations = response as List<dynamic>?;
@@ -45,6 +49,37 @@ class ReservationRepository {
       rethrow;
     } catch (e) {
       throw ReservationRepositoryException('Failed to fetch reservations: $e');
+    }
+  }
+
+  /// Get confirmed reservations with ride details for active ride detection
+  ///
+  /// GET /reservations/?employee_id={employeeId}&include_ride=true
+  Future<List<Reservation>> getMyConfirmedReservationsWithRides(
+    int employeeId,
+  ) async {
+    try {
+      final endpoint =
+          '/reservations/?employee_id=$employeeId&include_ride=true';
+      final response = await ApiClient.get(endpoint);
+
+      final reservations = response as List<dynamic>?;
+      if (reservations == null) {
+        return [];
+      }
+
+      return reservations
+          .map((json) => Reservation.fromJson(json as Map<String, dynamic>))
+          .where(
+            (reservation) => reservation.status?.toLowerCase() == 'confirmed',
+          )
+          .toList();
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ReservationRepositoryException(
+        'Failed to fetch confirmed reservations: $e',
+      );
     }
   }
 

@@ -54,13 +54,17 @@ class ReservationProvider extends ChangeNotifier {
   ///
   /// Fetches all reservations for the current user.
   /// Results are available via [myReservations] getter.
-  Future<bool> getMyReservations(int employeeId) async {
+  Future<bool> getMyReservations(
+    int employeeId, {
+    bool includeRide = false,
+  }) async {
     _setLoadingReservations(true);
     _clearError();
 
     try {
       final reservations = await _reservationRepository.getMyReservations(
         employeeId,
+        includeRide: includeRide,
       );
       _myReservations = reservations;
       _setLoadingReservations(false);
@@ -74,6 +78,26 @@ class ReservationProvider extends ChangeNotifier {
       _setError('Failed to fetch reservations: $e');
       _setLoadingReservations(false);
       return false;
+    }
+  }
+
+  /// Get confirmed reservations with ride details for active ride detection
+  ///
+  /// Fetches confirmed reservations with full ride information.
+  /// Returns list of reservations with ride details.
+  Future<List<Reservation>> getMyConfirmedReservationsWithRides(
+    int employeeId,
+  ) async {
+    try {
+      return await _reservationRepository.getMyConfirmedReservationsWithRides(
+        employeeId,
+      );
+    } on ApiException catch (e) {
+      _setError(e.message);
+      return [];
+    } catch (e) {
+      _setError('Failed to fetch confirmed reservations: $e');
+      return [];
     }
   }
 
