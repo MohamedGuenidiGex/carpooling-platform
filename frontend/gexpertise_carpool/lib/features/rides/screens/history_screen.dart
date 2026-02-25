@@ -243,6 +243,7 @@ class _OfferedRidesTab extends StatelessWidget {
       case 'scheduled':
       case 'active':
       case 'full':
+        // Scheduled state: Show Start + Cancel buttons
         return Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Row(
@@ -285,28 +286,51 @@ class _OfferedRidesTab extends StatelessWidget {
         );
 
       case 'driver_en_route':
+        // Driver en route: Show Mark Arrived + Cancel buttons
         return Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _arriveRide(context, rideProvider, ride),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: BrandColors.primaryRed,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: () => _arriveRide(context, rideProvider, ride),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: BrandColors.primaryRed,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.location_on, size: 18),
+                  label: const Text('Mark Arrived'),
                 ),
               ),
-              icon: const Icon(Icons.location_on, size: 18),
-              label: const Text('Mark Arrived'),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _cancelRide(context, rideProvider, ride),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[50],
+                    foregroundColor: Colors.red[700],
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.cancel_outlined, size: 18),
+                  label: const Text('Cancel'),
+                ),
+              ),
+            ],
           ),
         );
 
       case 'arrived':
+        // Arrived: Show Begin Ride button only
         return Padding(
           padding: const EdgeInsets.only(top: 12),
           child: SizedBox(
@@ -329,6 +353,7 @@ class _OfferedRidesTab extends StatelessWidget {
         );
 
       case 'in_progress':
+        // In progress: Show Complete Ride button only
         return Padding(
           padding: const EdgeInsets.only(top: 12),
           child: SizedBox(
@@ -351,78 +376,99 @@ class _OfferedRidesTab extends StatelessWidget {
         );
 
       case 'completed':
+        // Completed: Show badge + Delete button
         return Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.green[50],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.check_circle, size: 16, color: Colors.green[700]),
-                const SizedBox(width: 8),
-                Text(
-                  'Completed',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.green[700],
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: Colors.green[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Completed',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => _deleteRide(context, rideProvider, ride),
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: Colors.red[700],
+                tooltip: 'Delete Ride',
+              ),
+            ],
           ),
         );
 
       case 'cancelled':
+        // Cancelled: Show badge + Delete button
         return Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.cancel, size: 16, color: Colors.grey[700]),
-                const SizedBox(width: 8),
-                Text(
-                  'Cancelled',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.cancel, size: 16, color: Colors.grey[700]),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Cancelled',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => _deleteRide(context, rideProvider, ride),
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: Colors.red[700],
+                tooltip: 'Delete Ride',
+              ),
+            ],
           ),
         );
 
       default:
-        return Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
-              ),
-            ),
-          ),
-        );
+        return const SizedBox.shrink();
     }
   }
 
@@ -546,6 +592,52 @@ class _OfferedRidesTab extends StatelessWidget {
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Cancel Ride'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteRide(BuildContext context, RideProvider rideProvider, Ride ride) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Ride?'),
+        content: Text(
+          'Are you sure you want to delete this ride to ${ride.destination}? '
+          'This will remove it from your ride history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final success = await rideProvider.deleteRide(ride.id!);
+              if (context.mounted) {
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ride deleted successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        rideProvider.errorMessage ?? 'Failed to delete ride',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
           ),
         ],
       ),

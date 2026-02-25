@@ -344,6 +344,34 @@ class RideProvider extends ChangeNotifier {
     }
   }
 
+  /// Delete ride (driver only, completed or cancelled rides only)
+  ///
+  /// DELETE /rides/<ride_id>
+  /// Returns true on success, false on failure.
+  Future<bool> deleteRide(int rideId) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _rideRepository.deleteRide(rideId);
+
+      // Remove the ride from the myOfferedRides list
+      _myOfferedRides.removeWhere((ride) => ride.id == rideId);
+
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to delete ride: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Get ride by ID
   ///
   /// Fetches a single ride details.

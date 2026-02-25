@@ -12,6 +12,7 @@ class Ride(db.Model):
     available_seats = db.Column(db.Integer, nullable=False)
     status = db.Column(db.String(20), default='scheduled')
     cancelled_at = db.Column(db.DateTime, nullable=True)
+    is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 

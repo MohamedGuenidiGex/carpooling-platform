@@ -128,7 +128,8 @@ class RideList(Resource):
     @api.marshal_with(paginated_rides_response)
     def get(self):
         """List all rides with optional filtering, sorting, and pagination"""
-        query = Ride.query
+        # Exclude soft-deleted rides
+        query = Ride.query.filter(Ride.is_deleted == False)
 
         # Origin/destination filters
         origin = request.args.get('origin')
@@ -645,6 +646,55 @@ class RideCancel(Resource):
         except Exception as e:
             db.session.rollback()
             api.abort(500, f'Cancellation failed: {str(e)}')
+
+
+@api.route('/<int:id>')
+@api.param('id', 'Ride ID')
+class RideDelete(Resource):
+    @jwt_required()
+    @api.doc('delete_ride', security='Bearer', description='Soft delete a ride (only by driver). Only allowed for completed or cancelled rides.',
+        responses={
+            400: ('Validation error - ride must be completed or cancelled', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can delete', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    def delete(self, id):
+        """Soft delete a ride (only the driver can delete completed or cancelled rides)"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            ride = Ride.query.get(id)
+            
+            if not ride:
+                api.abort(404, 'Ride not found')
+            
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can delete the ride')
+            
+            # Only allow deletion of completed or cancelled rides
+            if ride.status not in ['completed', 'cancelled', 'COMPLETED', 'CANCELLED']:
+                api.abort(400, f'Cannot delete ride with status {ride.status}. Only completed or cancelled rides can be deleted.')
+            
+            # Soft delete - mark as deleted instead of removing from database
+            ride.is_deleted = True
+            db.session.commit()
+            
+            log_action(
+                action='RIDE_DELETED',
+                employee_id=employee_id,
+                details={'ride_id': ride.id, 'status': ride.status, 'origin': ride.origin, 'destination': ride.destination}
+            )
+            
+            return {'message': 'Ride deleted successfully', 'ride_id': ride.id}, 200
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Failed to delete ride: {str(e)}')
 
 
 @api.route('/<int:id>/participants')

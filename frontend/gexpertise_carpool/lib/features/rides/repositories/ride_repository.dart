@@ -199,6 +199,19 @@ class RideRepository {
       throw RideRepositoryException('Failed to complete ride: $e');
     }
   }
+
+  /// Delete ride (driver only, completed or cancelled rides only)
+  ///
+  /// DELETE /rides/{id}
+  Future<void> deleteRide(int id) async {
+    try {
+      await ApiClient.delete('/rides/$id');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw RideRepositoryException('Failed to delete ride: $e');
+    }
+  }
 }
 
 /// Custom exception for RideRepository errors
