@@ -336,39 +336,230 @@ class RideDetail(Resource):
         return ride
 
 
+@api.route('/<int:id>/start')
+@api.param('id', 'Ride ID')
+class RideStart(Resource):
+    @jwt_required()
+    @api.doc('start_ride', security='Bearer', description='Start ride - driver en route (only by driver). Transitions from scheduled to driver_en_route.',
+        responses={
+            400: ('Validation error - invalid state transition', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can start', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    def patch(self, id):
+        """Start ride - driver en route (only the driver can start)"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            ride = Ride.query.get(id)
+            
+            if not ride:
+                api.abort(404, 'Ride not found')
+            
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can start the ride')
+            
+            if not ride.can_transition_to('driver_en_route'):
+                api.abort(400, f'Cannot transition from {ride.status} to driver_en_route')
+            
+            ride.status = 'driver_en_route'
+            db.session.commit()
+            
+            log_action(
+                action='RIDE_STARTED',
+                employee_id=employee_id,
+                details={'ride_id': ride.id, 'new_status': 'driver_en_route'}
+            )
+            
+            emit_ride_status_update(
+                socketio,
+                ride_id=ride.id,
+                new_status=ride.status,
+                updated_at=datetime.utcnow().isoformat()
+            )
+            
+            return serialize_ride_with_reservations(ride), 200
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Failed to start ride: {str(e)}')
+
+
+@api.route('/<int:id>/arrive')
+@api.param('id', 'Ride ID')
+class RideArrive(Resource):
+    @jwt_required()
+    @api.doc('arrive_ride', security='Bearer', description='Mark driver as arrived (only by driver). Transitions from driver_en_route to arrived.',
+        responses={
+            400: ('Validation error - invalid state transition', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can mark arrival', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    def patch(self, id):
+        """Mark driver as arrived (only the driver can mark arrival)"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            ride = Ride.query.get(id)
+            
+            if not ride:
+                api.abort(404, 'Ride not found')
+            
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can mark arrival')
+            
+            if not ride.can_transition_to('arrived'):
+                api.abort(400, f'Cannot transition from {ride.status} to arrived')
+            
+            ride.status = 'arrived'
+            db.session.commit()
+            
+            log_action(
+                action='RIDE_DRIVER_ARRIVED',
+                employee_id=employee_id,
+                details={'ride_id': ride.id, 'new_status': 'arrived'}
+            )
+            
+            emit_ride_status_update(
+                socketio,
+                ride_id=ride.id,
+                new_status=ride.status,
+                updated_at=datetime.utcnow().isoformat()
+            )
+            
+            return serialize_ride_with_reservations(ride), 200
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Failed to mark arrival: {str(e)}')
+
+
+@api.route('/<int:id>/begin')
+@api.param('id', 'Ride ID')
+class RideBegin(Resource):
+    @jwt_required()
+    @api.doc('begin_ride', security='Bearer', description='Begin ride journey (only by driver). Transitions from arrived to in_progress.',
+        responses={
+            400: ('Validation error - invalid state transition', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can begin ride', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    def patch(self, id):
+        """Begin ride journey (only the driver can begin)"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            ride = Ride.query.get(id)
+            
+            if not ride:
+                api.abort(404, 'Ride not found')
+            
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can begin the ride')
+            
+            if not ride.can_transition_to('in_progress'):
+                api.abort(400, f'Cannot transition from {ride.status} to in_progress')
+            
+            ride.status = 'in_progress'
+            db.session.commit()
+            
+            log_action(
+                action='RIDE_BEGUN',
+                employee_id=employee_id,
+                details={'ride_id': ride.id, 'new_status': 'in_progress'}
+            )
+            
+            emit_ride_status_update(
+                socketio,
+                ride_id=ride.id,
+                new_status=ride.status,
+                updated_at=datetime.utcnow().isoformat()
+            )
+            
+            return serialize_ride_with_reservations(ride), 200
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Failed to begin ride: {str(e)}')
+
+
 @api.route('/<int:id>/complete')
 @api.param('id', 'Ride ID')
 class RideComplete(Resource):
     @jwt_required()
-    @api.doc('complete_ride', security='Bearer', description='Mark ride as COMPLETED (only by driver). Completed rides cannot be edited or booked.',
+    @api.doc('complete_ride', security='Bearer', description='Complete ride (only by driver). Transitions from in_progress to completed. Updates all reservations to completed.',
         responses={
-            400: ('Validation error', error_response),
+            400: ('Validation error - invalid state transition', error_response),
             401: ('Unauthorized - JWT required', error_response),
             403: ('Forbidden - Only ride driver can complete', error_response),
             404: ('Ride not found', error_response),
             500: ('Internal server error', error_response)
         }
     )
-    @api.marshal_with(ride_response)
     def patch(self, id):
-        """Mark a ride as completed (only the driver can complete)"""
+        """Complete ride (only the driver can complete)"""
         employee_id = int(get_jwt_identity())
-        ride = Ride.query.get(id)
         
-        if not ride:
-            api.abort(404, 'Ride not found')
-        
-        # Only driver can complete
-        if ride.driver_id != employee_id:
-            api.abort(403, 'Only the ride driver can complete it')
-        
-        # Already completed
-        if ride.status == 'COMPLETED':
-            api.abort(400, 'Ride is already completed')
-        
-        ride.status = 'COMPLETED'
-        db.session.commit()
-        return ride
+        try:
+            ride = Ride.query.get(id)
+            
+            if not ride:
+                api.abort(404, 'Ride not found')
+            
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can complete the ride')
+            
+            if not ride.can_transition_to('completed'):
+                api.abort(400, f'Cannot transition from {ride.status} to completed')
+            
+            ride.status = 'completed'
+            
+            # Update all CONFIRMED reservations to completed
+            reservations = Reservation.query.filter_by(
+                ride_id=ride.id,
+                status='CONFIRMED'
+            ).all()
+            
+            for reservation in reservations:
+                reservation.status = 'COMPLETED'
+            
+            db.session.commit()
+            
+            log_action(
+                action='RIDE_COMPLETED',
+                employee_id=employee_id,
+                details={'ride_id': ride.id, 'new_status': 'completed', 'reservations_completed': len(reservations)}
+            )
+            
+            emit_ride_status_update(
+                socketio,
+                ride_id=ride.id,
+                new_status=ride.status,
+                updated_at=datetime.utcnow().isoformat()
+            )
+            
+            return serialize_ride_with_reservations(ride), 200
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Failed to complete ride: {str(e)}')
 
 
 @api.route('/<int:id>/cancel')
