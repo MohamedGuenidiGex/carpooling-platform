@@ -46,7 +46,10 @@ class _ActiveReservationsScreenState extends State<ActiveReservationsScreen>
     if (userId != null) {
       // Load data for both tabs
       context.read<RideProvider>().getMyOfferedRides(userId);
-      context.read<ReservationProvider>().getMyReservations(userId);
+      context.read<ReservationProvider>().getMyReservations(
+        userId,
+        includeRide: true,
+      );
     }
   }
 
@@ -57,7 +60,10 @@ class _ActiveReservationsScreenState extends State<ActiveReservationsScreen>
     if (userId != null) {
       await Future.wait([
         context.read<RideProvider>().getMyOfferedRides(userId),
-        context.read<ReservationProvider>().getMyReservations(userId),
+        context.read<ReservationProvider>().getMyReservations(
+          userId,
+          includeRide: true,
+        ),
       ]);
     }
   }
