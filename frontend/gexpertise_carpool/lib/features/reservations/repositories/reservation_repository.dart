@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../../../core/network/api_client.dart';
 import '../models/reservation_model.dart';
 
@@ -35,11 +36,22 @@ class ReservationRepository {
     try {
       final endpoint =
           '/reservations/?employee_id=$employeeId&include_ride=${includeRide.toString()}';
+      debugPrint('ReservationRepository: Fetching from $endpoint');
       final response = await ApiClient.get(endpoint);
 
       final reservations = response as List<dynamic>?;
       if (reservations == null) {
+        debugPrint('ReservationRepository: Response is null');
         return [];
+      }
+
+      debugPrint(
+        'ReservationRepository: Got ${reservations.length} reservations',
+      );
+      if (reservations.isNotEmpty && includeRide) {
+        debugPrint(
+          'ReservationRepository: First reservation JSON: ${reservations.first}',
+        );
       }
 
       return reservations

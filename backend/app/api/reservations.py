@@ -95,6 +95,10 @@ class ReservationList(Resource):
             result = []
             for reservation in reservations:
                 ride = Ride.query.get(reservation.ride_id)
+                # Skip if ride is deleted or doesn't exist
+                if not ride or ride.is_deleted:
+                    continue
+                    
                 driver = Employee.query.get(ride.driver_id) if ride else None
                 
                 result.append({
@@ -117,7 +121,7 @@ class ReservationList(Resource):
                             'name': driver.name,
                             'email': driver.email
                         } if driver else None
-                    } if ride else None
+                    }
                 })
             return result
         else:
