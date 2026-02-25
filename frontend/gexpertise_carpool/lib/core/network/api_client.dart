@@ -8,8 +8,16 @@ import 'auth_storage.dart';
 /// Provides generic GET and POST methods with automatic JSON handling
 /// and Authorization header attachment.
 class ApiClient {
-  // Android emulator maps 10.0.2.2 to host machine localhost
-  static const String baseUrl = 'http://10.0.2.2:5000';
+  // Platform-aware base URL
+  static String get baseUrl {
+    if (kIsWeb) {
+      // Flutter Web (Chrome) runs on host machine
+      return 'http://localhost:5000';
+    } else {
+      // Android emulator maps 10.0.2.2 to host machine localhost
+      return 'http://10.0.2.2:5000';
+    }
+  }
 
   /// Perform a GET request
   ///
