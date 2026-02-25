@@ -204,9 +204,6 @@ class _OfferedRidesTab extends StatelessWidget {
             itemCount: rideProvider.myOfferedRides.length,
             itemBuilder: (context, index) {
               final ride = rideProvider.myOfferedRides[index];
-              final isScheduled =
-                  ride.status?.toUpperCase() == 'ACTIVE' ||
-                  ride.status?.toUpperCase() == 'FULL';
 
               return Column(
                 children: [
@@ -223,50 +220,7 @@ class _OfferedRidesTab extends StatelessWidget {
                       );
                     },
                   ),
-                  if (isScheduled)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () =>
-                              _cancelRide(context, rideProvider, ride),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red[50],
-                            foregroundColor: Colors.red[700],
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          icon: const Icon(Icons.cancel_outlined, size: 18),
-                          label: const Text('Cancel Ride'),
-                        ),
-                      ),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          ride.status ?? 'Unknown',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      ),
-                    ),
+                  _buildRideActionButton(context, rideProvider, ride),
                   const SizedBox(height: 16),
                 ],
               );
@@ -275,6 +229,281 @@ class _OfferedRidesTab extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _buildRideActionButton(
+    BuildContext context,
+    RideProvider rideProvider,
+    Ride ride,
+  ) {
+    final status = ride.status?.toLowerCase() ?? 'scheduled';
+
+    // State-driven button based on ride status
+    switch (status) {
+      case 'scheduled':
+      case 'active':
+      case 'full':
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _startRide(context, rideProvider, ride),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: BrandColors.primaryRed,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.directions_car, size: 18),
+                  label: const Text('Start Ride'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _cancelRide(context, rideProvider, ride),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[50],
+                    foregroundColor: Colors.red[700],
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.cancel_outlined, size: 18),
+                  label: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case 'driver_en_route':
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _arriveRide(context, rideProvider, ride),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: BrandColors.primaryRed,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.location_on, size: 18),
+              label: const Text('Mark Arrived'),
+            ),
+          ),
+        );
+
+      case 'arrived':
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _beginRide(context, rideProvider, ride),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: BrandColors.primaryRed,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.play_arrow, size: 18),
+              label: const Text('Begin Ride'),
+            ),
+          ),
+        );
+
+      case 'in_progress':
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _completeRide(context, rideProvider, ride),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.check_circle, size: 18),
+              label: const Text('Complete Ride'),
+            ),
+          ),
+        );
+
+      case 'completed':
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.green[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, size: 16, color: Colors.green[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Completed',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case 'cancelled':
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.cancel, size: 16, color: Colors.grey[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Cancelled',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      default:
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+        );
+    }
+  }
+
+  Future<void> _startRide(
+    BuildContext context,
+    RideProvider rideProvider,
+    Ride ride,
+  ) async {
+    final success = await rideProvider.startRide(ride.id!);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Ride started - en route!'
+                : rideProvider.errorMessage ?? 'Failed to start ride',
+          ),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _arriveRide(
+    BuildContext context,
+    RideProvider rideProvider,
+    Ride ride,
+  ) async {
+    final success = await rideProvider.arriveRide(ride.id!);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Marked as arrived!'
+                : rideProvider.errorMessage ?? 'Failed to mark arrival',
+          ),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _beginRide(
+    BuildContext context,
+    RideProvider rideProvider,
+    Ride ride,
+  ) async {
+    final success = await rideProvider.beginRide(ride.id!);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Ride journey begun!'
+                : rideProvider.errorMessage ?? 'Failed to begin ride',
+          ),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _completeRide(
+    BuildContext context,
+    RideProvider rideProvider,
+    Ride ride,
+  ) async {
+    final success = await rideProvider.completeRide(ride.id!);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Ride completed successfully!'
+                : rideProvider.errorMessage ?? 'Failed to complete ride',
+          ),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
   }
 
   void _cancelRide(BuildContext context, RideProvider rideProvider, Ride ride) {

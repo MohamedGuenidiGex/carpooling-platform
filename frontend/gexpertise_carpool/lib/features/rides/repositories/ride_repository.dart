@@ -143,6 +143,62 @@ class RideRepository {
       throw RideRepositoryException('Failed to cancel ride: $e');
     }
   }
+
+  /// Start ride - driver en route (driver only)
+  ///
+  /// PATCH /rides/{id}/start
+  Future<Ride> startRide(int id) async {
+    try {
+      final response = await ApiClient.patch('/rides/$id/start', body: {});
+      return Ride.fromJson(response);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw RideRepositoryException('Failed to start ride: $e');
+    }
+  }
+
+  /// Mark driver as arrived (driver only)
+  ///
+  /// PATCH /rides/{id}/arrive
+  Future<Ride> arriveRide(int id) async {
+    try {
+      final response = await ApiClient.patch('/rides/$id/arrive', body: {});
+      return Ride.fromJson(response);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw RideRepositoryException('Failed to mark arrival: $e');
+    }
+  }
+
+  /// Begin ride journey (driver only)
+  ///
+  /// PATCH /rides/{id}/begin
+  Future<Ride> beginRide(int id) async {
+    try {
+      final response = await ApiClient.patch('/rides/$id/begin', body: {});
+      return Ride.fromJson(response);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw RideRepositoryException('Failed to begin ride: $e');
+    }
+  }
+
+  /// Complete ride (driver only)
+  ///
+  /// PATCH /rides/{id}/complete
+  Future<Ride> completeRide(int id) async {
+    try {
+      final response = await ApiClient.patch('/rides/$id/complete', body: {});
+      return Ride.fromJson(response);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw RideRepositoryException('Failed to complete ride: $e');
+    }
+  }
 }
 
 /// Custom exception for RideRepository errors

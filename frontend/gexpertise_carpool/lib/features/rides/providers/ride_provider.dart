@@ -220,6 +220,130 @@ class RideProvider extends ChangeNotifier {
     }
   }
 
+  /// Start ride - driver en route (driver only)
+  ///
+  /// PATCH /rides/<ride_id>/start
+  /// Returns true on success, false on failure.
+  Future<bool> startRide(int rideId) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final updatedRide = await _rideRepository.startRide(rideId);
+
+      // Update the ride in the myOfferedRides list
+      final index = _myOfferedRides.indexWhere((ride) => ride.id == rideId);
+      if (index != -1) {
+        _myOfferedRides[index] = updatedRide;
+      }
+
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to start ride: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Mark driver as arrived (driver only)
+  ///
+  /// PATCH /rides/<ride_id>/arrive
+  /// Returns true on success, false on failure.
+  Future<bool> arriveRide(int rideId) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final updatedRide = await _rideRepository.arriveRide(rideId);
+
+      // Update the ride in the myOfferedRides list
+      final index = _myOfferedRides.indexWhere((ride) => ride.id == rideId);
+      if (index != -1) {
+        _myOfferedRides[index] = updatedRide;
+      }
+
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to mark arrival: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Begin ride journey (driver only)
+  ///
+  /// PATCH /rides/<ride_id>/begin
+  /// Returns true on success, false on failure.
+  Future<bool> beginRide(int rideId) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final updatedRide = await _rideRepository.beginRide(rideId);
+
+      // Update the ride in the myOfferedRides list
+      final index = _myOfferedRides.indexWhere((ride) => ride.id == rideId);
+      if (index != -1) {
+        _myOfferedRides[index] = updatedRide;
+      }
+
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to begin ride: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Complete ride (driver only)
+  ///
+  /// PATCH /rides/<ride_id>/complete
+  /// Returns true on success, false on failure.
+  Future<bool> completeRide(int rideId) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final updatedRide = await _rideRepository.completeRide(rideId);
+
+      // Update the ride in the myOfferedRides list
+      final index = _myOfferedRides.indexWhere((ride) => ride.id == rideId);
+      if (index != -1) {
+        _myOfferedRides[index] = updatedRide;
+      }
+
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to complete ride: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Get ride by ID
   ///
   /// Fetches a single ride details.
