@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/core/theme/brand_colors.dart';
+import 'package:gexpertise_carpool/core/services/websocket_service.dart';
 
 class TripCard extends StatefulWidget {
   final Ride activeRide;
@@ -31,6 +32,43 @@ class _TripCardState extends State<TripCard> {
   void initState() {
     super.initState();
     currentRide = widget.activeRide;
+    _setupStatusPolling();
+  }
+
+  void _setupStatusPolling() {
+    // Poll for status updates every 5 seconds
+    // This will be replaced with WebSocket listener when WebSocketService is available
+    Future.doWhile(() async {
+      if (!mounted) return false;
+
+      await Future.delayed(const Duration(seconds: 5));
+
+      if (mounted) {
+        final rideProvider = context.read<RideProvider>();
+        try {
+          final updatedRide = await rideProvider.getRideDetails(
+            currentRide.id!,
+          );
+          if (updatedRide) {
+            final newRide = rideProvider.currentRide;
+            if (newRide != null) {
+              setState(() => currentRide = newRide);
+
+              // If ride is completed or cancelled, notify parent
+              final status = newRide.status?.toLowerCase() ?? '';
+              if (status == 'completed' || status == 'cancelled') {
+                widget.onRideCompleted();
+                return false; // Stop polling
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error polling ride status: $e');
+        }
+      }
+
+      return mounted;
+    });
   }
 
   @override
@@ -131,7 +169,9 @@ class _TripCardState extends State<TripCard> {
 
     if (mounted) {
       if (success) {
-        setState(() => currentRide = currentRide.copyWith(status: 'driver_en_route'));
+        setState(
+          () => currentRide = currentRide.copyWith(status: 'driver_en_route'),
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Ride started - en route!'),
@@ -166,7 +206,9 @@ class _TripCardState extends State<TripCard> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(rideProvider.errorMessage ?? 'Failed to mark arrival'),
+            content: Text(
+              rideProvider.errorMessage ?? 'Failed to mark arrival',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -181,7 +223,9 @@ class _TripCardState extends State<TripCard> {
 
     if (mounted) {
       if (success) {
-        setState(() => currentRide = currentRide.copyWith(status: 'in_progress'));
+        setState(
+          () => currentRide = currentRide.copyWith(status: 'in_progress'),
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Ride journey begun!'),
@@ -216,7 +260,9 @@ class _TripCardState extends State<TripCard> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(rideProvider.errorMessage ?? 'Failed to complete ride'),
+            content: Text(
+              rideProvider.errorMessage ?? 'Failed to complete ride',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -270,7 +316,9 @@ class _TripCardState extends State<TripCard> {
     final statusLabel = _getStatusLabel(currentRide.status ?? 'scheduled');
     final statusColor = _getStatusColor(currentRide.status ?? 'scheduled');
     final statusIcon = _getStatusIcon(currentRide.status ?? 'scheduled');
-    final formattedTime = DateFormat('MMM d, h:mm a').format(currentRide.departureTime);
+    final formattedTime = DateFormat(
+      'MMM d, h:mm a',
+    ).format(currentRide.departureTime);
 
     return Consumer<RideProvider>(
       builder: (context, rideProvider, _) {
@@ -326,10 +374,11 @@ class _TripCardState extends State<TripCard> {
                         // Route Information
                         Text(
                           'Your Trip',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                         ),
                         const SizedBox(height: 16),
 
