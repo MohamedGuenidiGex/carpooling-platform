@@ -2,10 +2,12 @@ from flask import request
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.exceptions import HTTPException
+from datetime import datetime
 
-from app.extensions import db
+from app.extensions import db, socketio
 from app.models import Reservation, Ride, Employee, Notification
 from app.utils.logger import log_action
+from app.realtime_events import emit_ride_status_update
 
 api = Namespace('reservations', description='Reservation operations')
 
@@ -303,6 +305,14 @@ class ReservationApprove(Resource):
                 employee_id=employee_id,
                 details={'reservation_id': reservation.id, 'ride_id': ride.id, 'seats_reserved': reservation.seats_reserved}
             )
+            
+            # Emit real-time update for ride status change
+            emit_ride_status_update(
+                socketio,
+                ride_id=ride.id,
+                new_status=ride.status,
+                updated_at=datetime.utcnow().isoformat()
+            )
 
             return reservation, 200
             
@@ -369,6 +379,14 @@ class ReservationReject(Resource):
                 action='RESERVATION_REJECTED',
                 employee_id=employee_id,
                 details={'reservation_id': reservation.id, 'ride_id': ride.id, 'seats_reserved': reservation.seats_reserved}
+            )
+            
+            # Emit real-time update for ride status (rejection doesn't change ride status, but notify clients)
+            emit_ride_status_update(
+                socketio,
+                ride_id=ride.id,
+                new_status=ride.status,
+                updated_at=datetime.utcnow().isoformat()
             )
 
             return reservation, 200

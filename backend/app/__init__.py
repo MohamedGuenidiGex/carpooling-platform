@@ -3,7 +3,7 @@ import os
 from flask import Flask
 
 from config import config_by_name
-from .extensions import db, jwt, migrate
+from .extensions import db, jwt, migrate, socketio
 from .api import init_api
 
 def create_app(config_name):
@@ -14,6 +14,7 @@ def create_app(config_name):
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    socketio.init_app(app)
     
     # Register global error handlers for standardized responses
     from .utils.error_handlers import register_error_handlers
@@ -21,6 +22,10 @@ def create_app(config_name):
     
     from . import models as _models  # noqa: F401
     init_api(app)
+    
+    # Register real-time event handlers
+    from .realtime_events import register_socket_handlers
+    register_socket_handlers(socketio)
 
     from .utils.seed import seed_demo_data
     # with app.app_context():

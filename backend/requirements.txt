@@ -3,7 +3,10 @@ Flask-Bcrypt
 Flask-Migrate
 Flask-RESTX
 Flask-SQLAlchemy
+Flask-SocketIO
 psycopg2-binary
 python-dotenv
 Flask-JWT-Extended
 Werkzeug
+python-socketio
+python-engineio
