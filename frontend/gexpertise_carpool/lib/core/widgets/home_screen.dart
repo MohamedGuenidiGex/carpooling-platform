@@ -46,22 +46,25 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       if (currentUserId == null) return;
 
-      // Fetch all rides for current user as driver
+      final List<Ride> candidateRides = [];
+
+      // STEP 1: Fetch rides where user is driver
       await rideProvider.getMyOfferedRides(currentUserId!);
-
-      // Filter for active rides
-      final allRides = rideProvider.myOfferedRides;
-
-      final activeRides = allRides
+      final offeredRides = rideProvider.myOfferedRides
           .where((ride) => _isRideActive(ride.status ?? ''))
           .toList();
+      candidateRides.addAll(offeredRides);
 
-      // Sort by departure time and get nearest upcoming ride
-      activeRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+      // STEP 2: Fetch rides where user is passenger with confirmed reservation
+      // This will be implemented when reservation provider is available
+      // For now, we'll use the offered rides only
 
-      if (activeRides.isNotEmpty) {
+      // STEP 3: Filter for active rides and sort by nearest upcoming
+      candidateRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+
+      if (candidateRides.isNotEmpty) {
         if (mounted) {
-          setState(() => activeRide = activeRides.first);
+          setState(() => activeRide = candidateRides.first);
         }
       }
     } catch (e) {
