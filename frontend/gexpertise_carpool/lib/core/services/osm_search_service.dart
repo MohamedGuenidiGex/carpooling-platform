@@ -1,13 +1,23 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 /// OpenStreetMap Nominatim Search Service
 ///
 /// Provides geocoding and place search functionality using the
-/// Nominatim API (OpenStreetMap's free search service).
+/// backend proxy API (which calls Nominatim).
+/// This avoids CORS issues when running on Flutter Web.
 class OsmSearchService {
-  static const String _baseUrl = 'https://nominatim.openstreetmap.org';
+  // Backend proxy URL - platform-aware
+  static String get _backendUrl {
+    if (kIsWeb) {
+      return 'http://localhost:5000';
+    } else {
+      return 'http://10.0.2.2:5000';
+    }
+  }
+
   static const String _userAgent = 'com.gexpertise.carpooling';
 
   /// Search for places by query string
@@ -38,14 +48,15 @@ class OsmSearchService {
 
     final encodedQuery = Uri.encodeComponent(query.trim());
     final url = Uri.parse(
-      '$_baseUrl/search?q=$encodedQuery&format=json&limit=5&countrycodes=tn',
+      '$_backendUrl/geocoding/search?q=$encodedQuery&limit=5',
     );
 
     try {
       final response = await http.get(url, headers: {'User-Agent': _userAgent});
 
       if (response.statusCode == 200) {
-        final List<dynamic> apiResults = json.decode(response.body);
+        final Map<String, dynamic> data = json.decode(response.body);
+        final List<dynamic> apiResults = data['results'] ?? [];
         results.addAll(
           apiResults.map((item) {
             return {
@@ -72,14 +83,14 @@ class OsmSearchService {
   ///
   /// Returns a formatted address string for the given coordinates.
   static Future<String?> reverseGeocode(double lat, double lon) async {
-    final url = Uri.parse('$_baseUrl/reverse?lat=$lat&lon=$lon&format=json');
+    final url = Uri.parse('$_backendUrl/geocoding/reverse?lat=$lat&lon=$lon');
 
     try {
       final response = await http.get(url, headers: {'User-Agent': _userAgent});
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> result = json.decode(response.body);
-        return result['display_name'] as String?;
+        return result['address'] as String?;
       }
       return null;
     } catch (e) {
@@ -94,66 +105,17 @@ class OsmSearchService {
   static Future<String> getAddressFromCoordinates(LatLng coordinates) async {
     try {
       final url = Uri.parse(
-        '$_baseUrl/reverse?lat=${coordinates.latitude}&lon=${coordinates.longitude}&format=json&addressdetails=1',
+        '$_backendUrl/geocoding/reverse?lat=${coordinates.latitude}&lon=${coordinates.longitude}',
       );
 
       final response = await http.get(url, headers: {'User-Agent': _userAgent});
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> result = json.decode(response.body);
-        final address = result['address'] as Map<String, dynamic>?;
+        final address = result['address'] as String?;
 
-        if (address != null) {
-          // Build a clean address from components
-          final parts = <String>[];
-
-          // Road/street name
-          if (address['road'] != null) {
-            parts.add(address['road'] as String);
-          } else if (address['street'] != null) {
-            parts.add(address['street'] as String);
-          }
-
-          // Suburb/neighborhood
-          if (address['suburb'] != null) {
-            parts.add(address['suburb'] as String);
-          } else if (address['neighbourhood'] != null) {
-            parts.add(address['neighbourhood'] as String);
-          }
-
-          // City/town
-          if (address['city'] != null) {
-            parts.add(address['city'] as String);
-          } else if (address['town'] != null) {
-            parts.add(address['town'] as String);
-          } else if (address['village'] != null) {
-            parts.add(address['village'] as String);
-          }
-
-          // State/country
-          if (address['state'] != null) {
-            parts.add(address['state'] as String);
-          }
-          if (address['country'] != null) {
-            parts.add(address['country'] as String);
-          }
-
-          if (parts.isNotEmpty) {
-            // Join first 2-3 parts for a clean address
-            final cleanParts = parts.take(3).toList();
-            return cleanParts.join(', ');
-          }
-        }
-
-        // Fallback to display_name if address parsing fails
-        final displayName = result['display_name'] as String?;
-        if (displayName != null && displayName.isNotEmpty) {
-          // Truncate if too long
-          final parts = displayName.split(', ');
-          if (parts.length > 3) {
-            return parts.take(3).join(', ');
-          }
-          return displayName;
+        if (address != null && address.isNotEmpty) {
+          return address;
         }
       }
 
