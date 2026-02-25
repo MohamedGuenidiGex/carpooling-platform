@@ -16,6 +16,8 @@ class Ride {
   final String? comments;
   final bool isRegular;
   final List<Reservation>? reservations;
+  final String? driverName;
+  final String? driverEmail;
 
   Ride({
     this.id,
@@ -28,11 +30,23 @@ class Ride {
     this.createdAt,
     this.comments,
     this.isRegular = false,
-    this.reservations, // Add to constructor
+    this.reservations,
+    this.driverName,
+    this.driverEmail,
   });
 
   /// Create Ride from JSON response
   factory Ride.fromJson(Map<String, dynamic> json) {
+    // Extract driver info from nested driver object if present
+    String? driverName;
+    String? driverEmail;
+
+    if (json['driver'] != null && json['driver'] is Map<String, dynamic>) {
+      final driverData = json['driver'] as Map<String, dynamic>;
+      driverName = driverData['name'] as String?;
+      driverEmail = driverData['email'] as String?;
+    }
+
     return Ride(
       id: json['id'] as int?,
       driverId: json['driver_id'] as int?,
@@ -49,6 +63,8 @@ class Ride {
           ?.where((e) => e != null)
           .map((e) => Reservation.fromJson(e as Map<String, dynamic>))
           .toList(),
+      driverName: driverName,
+      driverEmail: driverEmail,
     );
   }
 
@@ -77,6 +93,8 @@ class Ride {
     String? comments,
     bool? isRegular,
     List<Reservation>? reservations,
+    String? driverName,
+    String? driverEmail,
   }) {
     return Ride(
       id: id ?? this.id,
@@ -90,6 +108,8 @@ class Ride {
       comments: comments ?? this.comments,
       isRegular: isRegular ?? this.isRegular,
       reservations: reservations ?? this.reservations,
+      driverName: driverName ?? this.driverName,
+      driverEmail: driverEmail ?? this.driverEmail,
     );
   }
 

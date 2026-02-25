@@ -124,25 +124,55 @@ class ReservationCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            // Ride Info
-            _buildInfoRow(
-              icon: Icons.local_taxi_outlined,
-              label: 'Ride #${reservation.rideId}',
-            ),
-            const SizedBox(height: 12),
+            // Route Information (if ride details available)
+            if (reservation.ride != null) ...[
+              _buildInfoRow(
+                icon: Icons.trip_origin,
+                label: reservation.ride!.origin,
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 30),
+                child: Icon(
+                  Icons.arrow_downward,
+                  size: 16,
+                  color: Colors.grey[400],
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildInfoRow(
+                icon: Icons.location_on_outlined,
+                label: reservation.ride!.destination,
+              ),
+              const SizedBox(height: 12),
+              // Departure Date & Time
+              _buildInfoRow(
+                icon: Icons.schedule_outlined,
+                label: _formatDateTime(reservation.ride!.departureTime),
+              ),
+              const SizedBox(height: 12),
+              // Driver Name (if available)
+              if (reservation.ride!.driverName != null)
+                _buildInfoRow(
+                  icon: Icons.person_outline,
+                  label: 'Driver: ${reservation.ride!.driverName}',
+                ),
+              if (reservation.ride!.driverName != null)
+                const SizedBox(height: 12),
+            ] else ...[
+              // Fallback if ride details not available
+              _buildInfoRow(
+                icon: Icons.local_taxi_outlined,
+                label: 'Ride #${reservation.rideId}',
+              ),
+              const SizedBox(height: 12),
+            ],
             // Seats Reserved
             _buildInfoRow(
               icon: Icons.event_seat_outlined,
               label:
                   '${reservation.seatsReserved} seat${reservation.seatsReserved != 1 ? 's' : ''} reserved',
             ),
-            const SizedBox(height: 12),
-            // Booking Date
-            if (reservation.createdAt != null)
-              _buildInfoRow(
-                icon: Icons.calendar_today_outlined,
-                label: 'Booked on ${_formatDate(reservation.createdAt!)}',
-              ),
             const SizedBox(height: 16),
             // Action buttons based on status (hidden in read-only mode)
             if (!readOnly && (reservation.isPending || reservation.isConfirmed))
@@ -203,8 +233,13 @@ class ReservationCard extends StatelessWidget {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  String _formatDateTime(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year;
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year at $hour:$minute';
   }
 }
 
