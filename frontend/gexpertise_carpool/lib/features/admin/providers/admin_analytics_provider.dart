@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:gexpertise_carpool/core/network/api_client.dart';
+import '../../../core/network/api_client.dart';
 import '../models/dashboard_analytics.dart';
 import '../models/recent_activity.dart';
 import '../models/status_distribution.dart';
@@ -50,7 +49,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         'AdminAnalyticsProvider: ApiException - status: ${e.statusCode}, message: ${e.message}',
       );
       _errorMessage = e.statusCode == 0
-          ? 'Failed to connect to server. Is backend running on ${ApiClient.baseUrl}?'
+          ? 'Failed to connect to server. Is backend running on 10.0.2.2:5000?'
           : 'Failed to load analytics: ${e.message}';
       _isLoading = false;
       notifyListeners();
@@ -78,7 +77,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         'AdminAnalyticsProvider: ApiException (recent activity) - status: ${e.statusCode}, message: ${e.message}',
       );
       _errorMessage = e.statusCode == 0
-          ? 'Failed to connect to server. Is backend running on ${ApiClient.baseUrl}?'
+          ? 'Failed to connect to server. Is backend running on 10.0.2.2:5000?'
           : 'Failed to load recent activity: ${e.message}';
       _isLoading = false;
       notifyListeners();
@@ -112,7 +111,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         'AdminAnalyticsProvider: ApiException (trends) - status: ${e.statusCode}, message: ${e.message}',
       );
       _errorMessage = e.statusCode == 0
-          ? 'Failed to connect to server. Is backend running on ${ApiClient.baseUrl}?'
+          ? 'Failed to connect to server. Is backend running on 10.0.2.2:5000?'
           : 'Failed to load trends: ${e.message}';
       _isLoading = false;
       notifyListeners();

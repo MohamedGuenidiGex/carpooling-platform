@@ -8,7 +8,6 @@ from .users import api as users_ns
 from .rides import api as rides_ns
 from .reservations import api as reservations_ns
 from .notifications import api as notifications_ns
-from .geocoding import api as geocoding_ns
 
 
 def init_api(app):
@@ -24,5 +23,4 @@ def init_api(app):
     api.add_namespace(rides_ns, path="/rides")
     api.add_namespace(reservations_ns, path="/reservations")
     api.add_namespace(notifications_ns, path="/notifications")
-    api.add_namespace(geocoding_ns, path="/geocoding")
     api.init_app(app)

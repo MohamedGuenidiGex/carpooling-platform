@@ -1,5 +1,5 @@
-import 'package:flutter/foundation.dart';
-import 'package:gexpertise_carpool/core/network/api_client.dart';
+import 'package:flutter/material.dart';
+import '../../../core/network/api_client.dart';
 import '../models/monitoring_overview.dart';
 import '../services/admin_monitoring_service.dart';
 
@@ -36,7 +36,7 @@ class AdminMonitoringProvider extends ChangeNotifier {
         'AdminMonitoringProvider: ApiException - status: ${e.statusCode}, message: ${e.message}',
       );
       _errorMessage = e.statusCode == 0
-          ? 'Failed to connect to server. Is backend running on ${ApiClient.baseUrl}?'
+          ? 'Failed to connect to server. Is backend running on 10.0.2.2:5000?'
           : 'Failed to load monitoring data: ${e.message}';
       _isLoading = false;
       notifyListeners();

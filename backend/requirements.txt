@@ -1,6 +1,5 @@
 Flask
 Flask-Bcrypt
-Flask-Cors
 Flask-Migrate
 Flask-RESTX
 Flask-SQLAlchemy

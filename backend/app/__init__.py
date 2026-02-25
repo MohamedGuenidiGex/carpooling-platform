@@ -1,7 +1,6 @@
 import os
 
 from flask import Flask
-from flask_cors import CORS
 
 from config import config_by_name
 from .extensions import db, jwt, migrate, socketio
@@ -11,20 +10,6 @@ def create_app(config_name):
     os.makedirs(os.path.join(os.getcwd(), 'instance'), exist_ok=True)
     app = Flask(__name__)
     app.config.from_object(config_by_name[config_name])
-    
-    # Disable trailing slash redirect to prevent CORS preflight issues
-    app.url_map.strict_slashes = False
-    
-    # Enable CORS for all domains to support Flutter Web
-    # Must be initialized BEFORE routes are registered
-    CORS(
-        app,
-        origins="*",
-        allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        supports_credentials=False,
-        max_age=3600
-    )
 
     db.init_app(app)
     migrate.init_app(app, db)
