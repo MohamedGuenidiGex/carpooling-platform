@@ -48,10 +48,21 @@ class ReservationRepository {
       debugPrint(
         'ReservationRepository: Got ${reservations.length} reservations',
       );
-      if (reservations.isNotEmpty && includeRide) {
+      if (reservations.isNotEmpty) {
         debugPrint(
-          'ReservationRepository: First reservation JSON: ${reservations.first}',
+          'ReservationRepository: First reservation raw JSON: ${reservations.first}',
         );
+        final firstReservation = Reservation.fromJson(
+          reservations.first as Map<String, dynamic>,
+        );
+        debugPrint(
+          'ReservationRepository: First reservation has ride? ${firstReservation.ride != null}',
+        );
+        if (firstReservation.ride != null) {
+          debugPrint(
+            'ReservationRepository: Ride details: origin=${firstReservation.ride!.origin}, dest=${firstReservation.ride!.destination}',
+          );
+        }
       }
 
       return reservations

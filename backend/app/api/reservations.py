@@ -89,6 +89,7 @@ class ReservationList(Resource):
         
         # Check if ride details should be included
         include_ride = request.args.get('include_ride', 'false').lower() == 'true'
+        log_action('GET_RESERVATIONS', f'include_ride={include_ride}, count={len(reservations)}')
         
         if include_ride:
             # Return reservations with ride details
@@ -101,7 +102,7 @@ class ReservationList(Resource):
                     
                 driver = Employee.query.get(ride.driver_id) if ride else None
                 
-                result.append({
+                reservation_data = {
                     'id': reservation.id,
                     'employee_id': reservation.employee_id,
                     'ride_id': reservation.ride_id,
@@ -122,7 +123,11 @@ class ReservationList(Resource):
                             'email': driver.email
                         } if driver else None
                     }
-                })
+                }
+                result.append(reservation_data)
+                log_action('RESERVATION_WITH_RIDE', f'reservation_id={reservation.id}, ride_id={ride.id}, origin={ride.origin}, dest={ride.destination}')
+            
+            log_action('GET_RESERVATIONS_RESULT', f'Returning {len(result)} reservations with ride details')
             return result
         else:
             # Return basic reservations without ride details
