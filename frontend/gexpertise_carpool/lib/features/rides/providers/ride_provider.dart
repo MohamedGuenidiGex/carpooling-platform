@@ -189,6 +189,37 @@ class RideProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Cancel a ride (driver only)
+  ///
+  /// PATCH /rides/<ride_id>/cancel
+  /// Returns true on success, false on failure.
+  Future<bool> cancelRide(int rideId) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final updatedRide = await _rideRepository.cancelRide(rideId);
+
+      // Update the ride in the myOfferedRides list
+      final index = _myOfferedRides.indexWhere((ride) => ride.id == rideId);
+      if (index != -1) {
+        _myOfferedRides[index] = updatedRide;
+      }
+
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to cancel ride: $e');
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Get ride by ID
   ///
   /// Fetches a single ride details.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../../../features/auth/providers/auth_provider.dart';
+import '../../../features/rides/models/ride_model.dart';
 import '../../../features/rides/providers/ride_provider.dart';
 import '../../../features/rides/screens/ride_details_screen.dart';
 import '../../../features/rides/widgets/ride_card.dart';
@@ -203,22 +204,122 @@ class _OfferedRidesTab extends StatelessWidget {
             itemCount: rideProvider.myOfferedRides.length,
             itemBuilder: (context, index) {
               final ride = rideProvider.myOfferedRides[index];
-              return RideCard(
-                ride: ride,
-                onTap: () {
-                  // Navigate to RideDetailsScreen for drivers to see pending requests
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => RideDetailsScreen(rideId: ride.id!),
+              final isScheduled =
+                  ride.status?.toUpperCase() == 'ACTIVE' ||
+                  ride.status?.toUpperCase() == 'FULL';
+
+              return Column(
+                children: [
+                  RideCard(
+                    ride: ride,
+                    onTap: () {
+                      // Navigate to RideDetailsScreen for drivers to see pending requests
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              RideDetailsScreen(rideId: ride.id!),
+                        ),
+                      );
+                    },
+                  ),
+                  if (isScheduled)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () =>
+                              _cancelRide(context, rideProvider, ride),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red[50],
+                            foregroundColor: Colors.red[700],
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.cancel_outlined, size: 18),
+                          label: const Text('Cancel Ride'),
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          ride.status ?? 'Unknown',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ),
                     ),
-                  );
-                },
+                  const SizedBox(height: 16),
+                ],
               );
             },
           ),
         );
       },
+    );
+  }
+
+  void _cancelRide(BuildContext context, RideProvider rideProvider, Ride ride) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Ride?'),
+        content: Text(
+          'Are you sure you want to cancel this ride to ${ride.destination}? '
+          'All passengers will be notified.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep Ride'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final success = await rideProvider.cancelRide(ride.id!);
+              if (context.mounted) {
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ride cancelled successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        rideProvider.errorMessage ?? 'Failed to cancel ride',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Cancel Ride'),
+          ),
+        ],
+      ),
     );
   }
 }

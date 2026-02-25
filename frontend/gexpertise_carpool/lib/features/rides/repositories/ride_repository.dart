@@ -129,6 +129,20 @@ class RideRepository {
       throw RideRepositoryException('Failed to fetch ride: $e');
     }
   }
+
+  /// Cancel a ride (driver only)
+  ///
+  /// PATCH /rides/{id}/cancel
+  Future<Ride> cancelRide(int id) async {
+    try {
+      final response = await ApiClient.patch('/rides/$id/cancel', body: {});
+      return Ride.fromJson(response);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw RideRepositoryException('Failed to cancel ride: $e');
+    }
+  }
 }
 
 /// Custom exception for RideRepository errors

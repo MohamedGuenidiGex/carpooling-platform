@@ -2,10 +2,12 @@ from flask import request
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
+from werkzeug.exceptions import HTTPException
 
-from app.extensions import db
-from app.models import Ride, Employee, Reservation
+from app.extensions import db, socketio
+from app.models import Ride, Employee, Reservation, Notification
 from app.utils.logger import log_action
+from app.realtime_events import emit_ride_status_update
 
 api = Namespace('rides', description='Ride operations')
 
@@ -367,6 +369,92 @@ class RideComplete(Resource):
         ride.status = 'COMPLETED'
         db.session.commit()
         return ride
+
+
+@api.route('/<int:id>/cancel')
+@api.param('id', 'Ride ID')
+class RideCancel(Resource):
+    @jwt_required()
+    @api.doc('cancel_ride', security='Bearer', description='Cancel a ride (only by driver). Sets status to CANCELLED and cancels all reservations.',
+        responses={
+            400: ('Validation error', error_response),
+            401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - Only ride driver can cancel', error_response),
+            404: ('Ride not found', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    @api.marshal_with(ride_response)
+    def patch(self, id):
+        """Cancel a ride (only the driver can cancel)"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            ride = Ride.query.get(id)
+            
+            if not ride:
+                api.abort(404, 'Ride not found')
+            
+            # Only driver can cancel
+            if ride.driver_id != employee_id:
+                api.abort(403, 'Only the ride driver can cancel it')
+            
+            # Can only cancel ACTIVE or FULL rides
+            if ride.status == 'COMPLETED':
+                api.abort(400, 'Cannot cancel a completed ride')
+            
+            if ride.status == 'CANCELLED':
+                api.abort(400, 'Ride is already cancelled')
+            
+            # Update ride status to CANCELLED
+            ride.status = 'CANCELLED'
+            ride.cancelled_at = datetime.utcnow()
+            
+            short_destination = (ride.destination or '').split(',')[0].strip() or ride.destination
+            
+            # Cancel all PENDING and CONFIRMED reservations for this ride
+            reservations = Reservation.query.filter_by(ride_id=ride.id).filter(
+                Reservation.status.in_(['PENDING', 'CONFIRMED'])
+            ).all()
+            
+            for reservation in reservations:
+                reservation.status = 'CANCELLED'
+                
+                # Create notification for affected passenger
+                notification = Notification(
+                    employee_id=reservation.employee_id,
+                    ride_id=ride.id,
+                    message=f'Ride Cancelled: Your ride to {short_destination} has been cancelled by the driver.',
+                    type='cancellation',
+                    is_read=False
+                )
+                db.session.add(notification)
+            
+            db.session.commit()
+            
+            # Log ride cancellation
+            log_action(
+                action='RIDE_CANCELLED',
+                employee_id=employee_id,
+                details={'ride_id': ride.id, 'origin': ride.origin, 'destination': ride.destination, 'reservations_cancelled': len(reservations)}
+            )
+            
+            # Emit real-time update for ride cancellation
+            emit_ride_status_update(
+                socketio,
+                ride_id=ride.id,
+                new_status=ride.status,
+                updated_at=datetime.utcnow().isoformat()
+            )
+            
+            return ride, 200
+            
+        except HTTPException:
+            # Re-raise HTTP exceptions (403, 404, 400) without modification
+            raise
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Cancellation failed: {str(e)}')
 
 
 @api.route('/<int:id>/participants')
