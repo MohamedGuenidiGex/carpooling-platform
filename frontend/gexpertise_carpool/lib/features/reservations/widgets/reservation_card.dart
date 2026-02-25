@@ -175,12 +175,27 @@ class ReservationCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             // Action buttons based on status (hidden in read-only mode)
-            if (!readOnly && (reservation.isPending || reservation.isConfirmed))
+            // Show cancel button if:
+            // - Not read-only mode
+            // - Reservation is pending or confirmed
+            // - Ride is NOT in_progress, completed, or cancelled
+            if (!readOnly &&
+                (reservation.isPending || reservation.isConfirmed) &&
+                _canCancelReservation())
               _buildCancelButton(context),
           ],
         ),
       ),
     );
+  }
+
+  /// Check if reservation can be cancelled based on ride status
+  bool _canCancelReservation() {
+    if (reservation.ride == null) return true; // Allow if no ride data
+
+    final rideStatus = (reservation.ride!.status ?? 'scheduled').toLowerCase();
+    // Cannot cancel if ride is in_progress, completed, or cancelled
+    return !['in_progress', 'completed', 'cancelled'].contains(rideStatus);
   }
 
   Widget _buildInfoRow({required IconData icon, required String label}) {

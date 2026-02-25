@@ -280,6 +280,14 @@ class ReservationCancel(Resource):
         if reservation.status in ['CANCELLED', 'REJECTED']:
             api.abort(400, f'Reservation is already {reservation.status.lower()}')
         
+        # Check ride status - passenger can cancel until ride is in_progress
+        ride = Ride.query.get(reservation.ride_id)
+        if ride:
+            ride_status = (ride.status or 'scheduled').lower()
+            # Cannot cancel if ride is in_progress, completed, or cancelled
+            if ride_status in ['in_progress', 'completed', 'cancelled']:
+                api.abort(400, f'Cannot cancel reservation - ride is {ride_status}')
+        
         # Restore available seats only if reservation was CONFIRMED
         if reservation.status == 'CONFIRMED':
             ride = Ride.query.get(reservation.ride_id)
