@@ -338,24 +338,14 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    // If user has an active ride, show TripCard instead of normal dashboard
-    if (_activeRide != null && _currentUserId != null) {
-      return Scaffold(
-        body: TripCard(
-          activeRide: _activeRide!,
-          currentUserId: _currentUserId!,
-          isDriver: _activeRide!.driverId == _currentUserId,
-          onRideCompleted: _handleRideCompleted,
-        ),
-      );
-    }
+    final bool hasActiveRide = _activeRide != null && _currentUserId != null;
 
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: _isSearching ? null : const GExpertiseDrawer(),
       body: Stack(
         children: [
-          // Layer 1: Map Background
+          // Layer 1: Map Background (always visible)
           _MapBackground(
             mapController: _mapController,
             currentPosition: _currentPosition,
@@ -375,10 +365,25 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
             ),
 
           // Layer 4: Current Location Button (Bottom Right, above panel)
-          _CurrentLocationButton(onPressed: _goToCurrentLocation),
+          if (!hasActiveRide)
+            _CurrentLocationButton(onPressed: _goToCurrentLocation),
 
-          // Layer 5: Floating Action Panel or Cancel Button (Bottom)
-          if (_isSearching)
+          // Layer 5: Bottom panel — TripCard overlay OR action panel
+          if (hasActiveRide)
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOutCubic,
+              bottom: 24,
+              left: 16,
+              right: 16,
+              child: TripCard(
+                activeRide: _activeRide!,
+                currentUserId: _currentUserId!,
+                isDriver: _activeRide!.driverId == _currentUserId,
+                onRideCompleted: _handleRideCompleted,
+              ),
+            )
+          else if (_isSearching)
             _CancelPanel(onCancel: _cancelSearch)
           else
             _BottomActionPanel(
