@@ -6,10 +6,17 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../../../core/services/osm_search_service.dart';
+import '../../../core/services/websocket_service.dart';
 import '../../../core/theme/brand_colors.dart';
+import '../../../core/utils/status_helpers.dart';
 import '../../../core/widgets/gexpertise_drawer.dart';
+import '../../../features/auth/providers/auth_provider.dart';
 import '../../../features/notifications/providers/notification_provider.dart';
 import '../../../features/notifications/screens/notifications_screen.dart';
+import '../../../features/reservations/providers/reservation_provider.dart';
+import '../models/ride_model.dart';
+import '../providers/ride_provider.dart';
+import '../widgets/trip_card.dart';
 import 'find_ride_screen.dart';
 import 'create_ride_screen.dart';
 
@@ -27,7 +34,7 @@ class RidesScreen extends StatefulWidget {
   State<RidesScreen> createState() => _RidesScreenState();
 }
 
-class _RidesScreenState extends State<RidesScreen> {
+class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   Timer? _notificationTimer;
   int _lastKnownCount = 0;
   final MapController _mapController = MapController();
@@ -39,23 +46,129 @@ class _RidesScreenState extends State<RidesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
+  // Active ride detection state
+  Ride? _activeRide;
+  int? _currentUserId;
+  final WebSocketService _wsService = WebSocketService();
+  Timer? _rideCheckTimer;
+
   @override
   void initState() {
     super.initState();
-    // Defer notification fetch to avoid setState during build
+    WidgetsBinding.instance.addObserver(this);
+    // Defer provider access to avoid setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startNotificationPolling();
+      _initActiveRideDetection();
     });
     _determinePosition();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _notificationTimer?.cancel();
+    _rideCheckTimer?.cancel();
+    _wsService.removeAllListeners('ride_status_updated');
     _mapController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshActiveRide();
+    }
+  }
+
+  /// Initialize active ride detection: WebSocket + initial fetch + polling fallback
+  void _initActiveRideDetection() {
+    final authProvider = context.read<AuthProvider>();
+    _currentUserId = authProvider.user?.id;
+
+    if (_currentUserId == null) return;
+
+    // Connect WebSocket and listen for ride status changes
+    final token = authProvider.token;
+    if (token != null) {
+      _wsService.connect(token);
+      _wsService.onRideStatusUpdate((data) {
+        debugPrint('RidesScreen: Received ride_status_updated: $data');
+        if (mounted) _refreshActiveRide();
+      });
+    }
+
+    // Initial fetch
+    _refreshActiveRide();
+
+    // Polling fallback every 10 seconds
+    _rideCheckTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _refreshActiveRide(),
+    );
+  }
+
+  /// Fetch and determine the active ride for the current user
+  Future<void> _refreshActiveRide() async {
+    if (!mounted || _currentUserId == null) return;
+
+    final rideProvider = context.read<RideProvider>();
+    final reservationProvider = context.read<ReservationProvider>();
+
+    try {
+      final List<Ride> candidateRides = [];
+
+      // 1. Driver rides — any ride not COMPLETED/CANCELLED
+      await rideProvider.getMyOfferedRides(_currentUserId!);
+      final driverRides = rideProvider.myOfferedRides
+          .where((ride) => isRideStatusActive(ride.status))
+          .toList();
+      debugPrint('RidesScreen: Driver rides found: ${driverRides.length}');
+      candidateRides.addAll(driverRides);
+
+      // 2. Passenger rides — CONFIRMED reservation on active ride
+      final confirmedReservations = await reservationProvider
+          .getMyConfirmedReservationsWithRides(_currentUserId!);
+      debugPrint(
+        'RidesScreen: Confirmed reservations found: ${confirmedReservations.length}',
+      );
+
+      for (final reservation in confirmedReservations) {
+        final ride = reservation.ride;
+        if (ride != null && isRideStatusActive(ride.status)) {
+          candidateRides.add(ride);
+        }
+      }
+
+      // 3. Pick nearest by departure time
+      candidateRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+
+      if (!mounted) return;
+
+      if (candidateRides.isNotEmpty) {
+        final selected = candidateRides.first;
+        debugPrint(
+          'RidesScreen: Active ride selected: ID=${selected.id}, status=${selected.status}',
+        );
+        _wsService.joinRide(selected.id!);
+        setState(() => _activeRide = selected);
+      } else {
+        debugPrint('RidesScreen: No active rides found');
+        if (_activeRide != null) {
+          setState(() => _activeRide = null);
+        }
+      }
+    } catch (e) {
+      debugPrint('RidesScreen: Error fetching active ride: $e');
+    }
+  }
+
+  void _handleRideCompleted() {
+    if (mounted) {
+      setState(() => _activeRide = null);
+    }
   }
 
   void _startNotificationPolling() {
@@ -225,6 +338,18 @@ class _RidesScreenState extends State<RidesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // If user has an active ride, show TripCard instead of normal dashboard
+    if (_activeRide != null && _currentUserId != null) {
+      return Scaffold(
+        body: TripCard(
+          activeRide: _activeRide!,
+          currentUserId: _currentUserId!,
+          isDriver: _activeRide!.driverId == _currentUserId,
+          onRideCompleted: _handleRideCompleted,
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: _isSearching ? null : const GExpertiseDrawer(),
