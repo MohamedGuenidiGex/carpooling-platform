@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/core/theme/brand_colors.dart';
@@ -153,6 +154,12 @@ class _TripCardState extends State<TripCard> {
   }
 
   Future<void> _arriveRide(RideProvider rideProvider) async {
+    // Soft GPS validation before marking arrival
+    final shouldProceed = await _validateArrivalLocation();
+    if (!shouldProceed) {
+      return; // User cancelled
+    }
+
     setState(() => isLoading = true);
     final success = await rideProvider.arriveRide(currentRide.id!);
     setState(() => isLoading = false);
@@ -177,6 +184,130 @@ class _TripCardState extends State<TripCard> {
         );
       }
     }
+  }
+
+  /// Soft location validation for arrival
+  /// Returns true if should proceed, false if cancelled
+  Future<bool> _validateArrivalLocation() async {
+    // Check if pickup coordinates are available
+    if (currentRide.originLat == null || currentRide.originLng == null) {
+      debugPrint(
+        'TripCard: No pickup coordinates available, skipping validation',
+      );
+      return true; // Proceed without validation
+    }
+
+    try {
+      // Request location permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          // Permission denied - show dialog and allow continue
+          if (!mounted) return false;
+          return await _showPermissionDeniedDialog();
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (!mounted) return false;
+        return await _showPermissionDeniedDialog();
+      }
+
+      // Get current position
+      final Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      debugPrint(
+        'TripCard: Driver GPS: ${position.latitude}, ${position.longitude}',
+      );
+      debugPrint(
+        'TripCard: Pickup GPS: ${currentRide.originLat}, ${currentRide.originLng}',
+      );
+
+      // Calculate distance in meters
+      final double distance = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        currentRide.originLat!,
+        currentRide.originLng!,
+      );
+
+      debugPrint(
+        'TripCard: Distance to pickup: ${distance.toStringAsFixed(0)} meters',
+      );
+
+      // Soft validation: warn if > 200m
+      if (distance > 200) {
+        if (!mounted) return false;
+        return await _showDistanceWarningDialog(distance);
+      }
+
+      return true; // Within range, proceed
+    } catch (e) {
+      debugPrint('TripCard: Location validation error: $e');
+      // On error, allow user to proceed
+      return true;
+    }
+  }
+
+  /// Show dialog when location permission is denied
+  Future<bool> _showPermissionDeniedDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Location Permission Required'),
+        content: const Text(
+          'Location permission is needed to validate your arrival at the pickup point. '
+          'You can continue without validation.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue Anyway'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  /// Show warning dialog when driver is far from pickup
+  Future<bool> _showDistanceWarningDialog(double distance) async {
+    final distanceText = distance >= 1000
+        ? '${(distance / 1000).toStringAsFixed(1)} km'
+        : '${distance.toStringAsFixed(0)} meters';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('You are not near pickup location'),
+        content: Text(
+          'You are approximately $distanceText away from the pickup point. '
+          'Are you sure you want to mark as arrived?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: BrandColors.primaryRed,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Future<void> _beginRide(RideProvider rideProvider) async {
