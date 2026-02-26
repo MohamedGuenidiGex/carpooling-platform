@@ -105,43 +105,8 @@ class RideTicketSheet extends StatelessWidget {
   }
 
   Widget _buildHeader() {
-    final hasCoordinates =
-        ride.originLat != null &&
-        ride.originLng != null &&
-        ride.destinationLat != null &&
-        ride.destinationLng != null;
-
     return Column(
       children: [
-        // Map placeholder or message
-        Container(
-          height: 120,
-          decoration: BoxDecoration(
-            color: Colors.grey[100],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  hasCoordinates
-                      ? Icons.map_outlined
-                      : Icons.location_off_outlined,
-                  size: 48,
-                  color: Colors.grey[400],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  hasCoordinates ? 'Route Preview' : 'Map data unavailable',
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
         Text(
           isDriver ? 'Your Ride Offer' : 'Your Reservation',
           style: const TextStyle(

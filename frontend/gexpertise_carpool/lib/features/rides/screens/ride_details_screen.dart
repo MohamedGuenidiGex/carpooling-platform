@@ -373,17 +373,6 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
     if (success) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Seat requested! Waiting for driver approval.'),
-            backgroundColor: Colors.green[600],
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
         // Refresh ride details to show updated state
         _loadRideDetails();
       }

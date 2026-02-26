@@ -102,6 +102,10 @@ class Ride {
       'available_seats': availableSeats,
       if (driverId != null) 'driver_id': driverId,
       if (comments != null && comments!.isNotEmpty) 'comments': comments,
+      if (originLat != null) 'origin_lat': originLat,
+      if (originLng != null) 'origin_lng': originLng,
+      if (destinationLat != null) 'destination_lat': destinationLat,
+      if (destinationLng != null) 'destination_lng': destinationLng,
     };
   }
 

@@ -62,6 +62,10 @@ class RideProvider extends ChangeNotifier {
         departureTime: departureTime,
         availableSeats: rideData['availableSeats'] as int,
         comments: rideData['comments'] as String?,
+        originLat: rideData['origin_lat'] as double?,
+        originLng: rideData['origin_lng'] as double?,
+        destinationLat: rideData['destination_lat'] as double?,
+        destinationLng: rideData['destination_lng'] as double?,
       );
 
       final createdRide = await _rideRepository.createRide(ride);

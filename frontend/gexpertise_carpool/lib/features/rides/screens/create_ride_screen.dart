@@ -33,6 +33,7 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
   bool _isRegular = false;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+  LatLng? _originCoordinates;
   LatLng? _destinationCoordinates;
 
   String? _resolvedOriginAddress;
@@ -44,6 +45,7 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     // Pre-fill start location if provided
     if (widget.startName != null) {
       _originController.text = widget.startName!;
+      _originCoordinates = widget.startCoordinates;
 
       // If it's "Current Location", resolve it to a real address
       if (widget.startName == 'Current Location' &&
@@ -173,8 +175,8 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     final rideData = {
       'origin': _originController.text.trim(),
       'destination': _destinationController.text.trim(),
-      'origin_lat': widget.startCoordinates?.latitude,
-      'origin_lng': widget.startCoordinates?.longitude,
+      'origin_lat': _originCoordinates?.latitude,
+      'origin_lng': _originCoordinates?.longitude,
       'destination_lat': _destinationCoordinates?.latitude,
       'destination_lng': _destinationCoordinates?.longitude,
       'date': _selectedDate!.toIso8601String(),
@@ -188,6 +190,9 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     };
 
     debugPrint('Publishing ride with data: $rideData');
+    debugPrint(
+      'Coordinates - Origin: (${_originCoordinates?.latitude}, ${_originCoordinates?.longitude}), Destination: (${_destinationCoordinates?.latitude}, ${_destinationCoordinates?.longitude})',
+    );
 
     try {
       await context.read<RideProvider>().createRide(rideData);
@@ -287,14 +292,14 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
   Widget _buildMapPreview() {
     final markers = <Marker>[];
 
-    // Green marker for start
-    if (widget.startCoordinates != null) {
+    // Blue marker for origin
+    if (_originCoordinates != null) {
       markers.add(
         Marker(
-          point: widget.startCoordinates!,
+          point: _originCoordinates!,
           width: 40,
           height: 40,
-          child: const Icon(Icons.location_on, color: Colors.green, size: 40),
+          child: const Icon(Icons.location_on, color: Colors.blue, size: 40),
         ),
       );
     }
@@ -344,65 +349,100 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     );
   }
 
-  /// Origin Field (Pre-filled, Read-only with loading state)
+  /// Origin Field with TypeAhead for search
   Widget _buildOriginField() {
-    return TextField(
+    return TypeAheadField<Map<String, dynamic>>(
       controller: _originController,
-      readOnly: true,
-      enabled: !_isResolvingOrigin,
-      style: const TextStyle(
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-        color: BrandColors.black,
-      ),
-      decoration: InputDecoration(
-        labelText: 'From',
-        hintText: 'Starting location',
-        prefixIcon: _isResolvingOrigin
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: Center(
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.green,
-                    ),
-                  ),
-                ),
-              )
-            : const Icon(Icons.my_location, color: Colors.green, size: 20),
-        filled: true,
-        fillColor: Colors.grey[50],
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[200]!, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: BrandColors.primaryRed, width: 2),
-        ),
-        labelStyle: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: Colors.grey[600],
-        ),
-        hintStyle: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-          color: Colors.grey[400],
-        ),
-      ),
+      suggestionsCallback: (pattern) async {
+        if (pattern.length < 2) return [];
+        return await OsmSearchService.searchPlaces(pattern);
+      },
+      builder: (context, controller, focusNode) {
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: BrandColors.black,
+          ),
+          decoration: InputDecoration(
+            labelText: 'From',
+            hintText: 'Search origin location',
+            prefixIcon: const Icon(
+              Icons.my_location,
+              color: Colors.green,
+              size: 20,
+            ),
+            suffixIcon: controller.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 20),
+                    onPressed: () {
+                      controller.clear();
+                      setState(() {
+                        _originCoordinates = null;
+                      });
+                    },
+                  )
+                : null,
+            filled: true,
+            fillColor: Colors.grey[50],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[200]!, width: 1),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: BrandColors.primaryRed,
+                width: 2,
+              ),
+            ),
+            labelStyle: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[600],
+            ),
+            hintStyle: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              color: Colors.grey[400],
+            ),
+          ),
+        );
+      },
+      itemBuilder: (context, suggestion) {
+        final isCurrentLocation = suggestion['is_current_location'] == true;
+        return ListTile(
+          leading: Icon(
+            isCurrentLocation ? Icons.my_location : Icons.location_on,
+            color: isCurrentLocation ? Colors.green : Colors.grey,
+          ),
+          title: Text(
+            suggestion['display_name'] as String,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14),
+          ),
+        );
+      },
+      onSelected: (suggestion) {
+        setState(() {
+          _originController.text = suggestion['display_name'] as String;
+          _originCoordinates = LatLng(
+            suggestion['lat'] as double,
+            suggestion['lon'] as double,
+          );
+        });
+      },
     );
   }
 
