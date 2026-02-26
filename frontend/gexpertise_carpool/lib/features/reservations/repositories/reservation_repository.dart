@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/utils/status_helpers.dart';
 import '../models/reservation_model.dart';
 
 /// Reservation Repository
@@ -95,14 +96,21 @@ class ReservationRepository {
           .map((json) => Reservation.fromJson(json as Map<String, dynamic>))
           .toList();
 
+      // Log raw statuses for debugging
+      for (final r in allReservations) {
+        debugPrint(
+          'ReservationRepository: reservation id=${r.id}, raw status="${r.status}", '
+          'ride id=${r.ride?.id}, ride raw status="${r.ride?.status}"',
+        );
+      }
+
       final confirmedReservations = allReservations
-          .where(
-            (reservation) => reservation.status?.toUpperCase() == 'CONFIRMED',
-          )
+          .where((reservation) => isReservationConfirmed(reservation.status))
           .toList();
 
       debugPrint(
-        'ReservationRepository: Fetched ${allReservations.length} total reservations, ${confirmedReservations.length} confirmed',
+        'ReservationRepository: ${allReservations.length} total, '
+        '${confirmedReservations.length} confirmed',
       );
 
       return confirmedReservations;

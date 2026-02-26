@@ -7,6 +7,7 @@ import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/widgets/trip_card.dart';
 import 'package:gexpertise_carpool/features/reservations/providers/reservation_provider.dart';
 import 'package:gexpertise_carpool/core/services/websocket_service.dart';
+import 'package:gexpertise_carpool/core/utils/status_helpers.dart';
 import '../theme/brand_text_styles.dart';
 
 /// Home Screen for GExpertise Carpool MVP
@@ -87,77 +88,51 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final reservationProvider = context.read<ReservationProvider>();
 
     try {
-      debugPrint('HomeScreen: Fetching active rides for user $currentUserId');
       final List<Ride> candidateRides = [];
 
-      // STEP 1: Fetch rides where user is driver
+      // 1. Driver rides — any ride not COMPLETED/CANCELLED
       await rideProvider.getMyOfferedRides(currentUserId!);
-      final offeredRides = rideProvider.myOfferedRides
-          .where((ride) => _isRideActive(ride.status ?? ''))
+      final driverRides = rideProvider.myOfferedRides
+          .where((ride) => isRideStatusActive(ride.status))
           .toList();
-      debugPrint(
-        'HomeScreen: Found ${offeredRides.length} active offered rides',
-      );
-      candidateRides.addAll(offeredRides);
+      debugPrint('HomeScreen: Driver rides found: ${driverRides.length}');
+      candidateRides.addAll(driverRides);
 
-      // STEP 2: Fetch rides where user is passenger with confirmed reservation
+      // 2. Passenger rides — CONFIRMED reservation on active ride
       final confirmedReservations = await reservationProvider
           .getMyConfirmedReservationsWithRides(currentUserId!);
       debugPrint(
-        'HomeScreen: Found ${confirmedReservations.length} confirmed reservations',
+        'HomeScreen: Confirmed reservations found: ${confirmedReservations.length}',
       );
 
       for (final reservation in confirmedReservations) {
-        if (reservation.ride != null) {
-          debugPrint(
-            'HomeScreen: Reservation ${reservation.id} has ride ${reservation.ride!.id} with status ${reservation.ride!.status}',
-          );
-          if (_isRideActive(reservation.ride!.status ?? '')) {
-            candidateRides.add(reservation.ride!);
-            debugPrint(
-              'HomeScreen: Added ride ${reservation.ride!.id} from reservation',
-            );
-          }
+        final ride = reservation.ride;
+        if (ride != null && isRideStatusActive(ride.status)) {
+          candidateRides.add(ride);
         }
       }
 
-      // STEP 3: Sort by nearest upcoming
+      // 3. Pick nearest by departure time
       candidateRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));
-      debugPrint(
-        'HomeScreen: Total ${candidateRides.length} active rides found',
-      );
 
-      if (mounted) {
-        if (candidateRides.isNotEmpty) {
-          final newActiveRide = candidateRides.first;
-          debugPrint(
-            'HomeScreen: Setting active ride to ${newActiveRide.id} (status: ${newActiveRide.status})',
-          );
+      if (!mounted) return;
 
-          // Join WebSocket room for this ride
-          _wsService.joinRide(newActiveRide.id!);
-
-          setState(() => activeRide = newActiveRide);
-        } else {
-          debugPrint('HomeScreen: No active rides found');
-          if (activeRide != null) {
-            setState(() => activeRide = null);
-          }
+      if (candidateRides.isNotEmpty) {
+        final selected = candidateRides.first;
+        debugPrint(
+          'HomeScreen: Active ride selected: ID=${selected.id}, status=${selected.status}',
+        );
+        _wsService.joinRide(selected.id!);
+        setState(() => activeRide = selected);
+      } else {
+        debugPrint('HomeScreen: No active rides found');
+        if (activeRide != null) {
+          setState(() => activeRide = null);
         }
       }
     } catch (e) {
       debugPrint('HomeScreen: Error fetching active ride: $e');
     }
-  }
-
-  bool _isRideActive(String status) {
-    final lowerStatus = status.toLowerCase();
-    return lowerStatus == 'scheduled' ||
-        lowerStatus == 'active' ||
-        lowerStatus == 'full' ||
-        lowerStatus == 'driver_en_route' ||
-        lowerStatus == 'arrived' ||
-        lowerStatus == 'in_progress';
   }
 
   void _handleRideCompleted() {
