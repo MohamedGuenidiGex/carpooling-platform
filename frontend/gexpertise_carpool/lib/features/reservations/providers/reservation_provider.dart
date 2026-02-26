@@ -176,6 +176,67 @@ class ReservationProvider extends ChangeNotifier {
     }
   }
 
+  /// Delete a completed reservation
+  ///
+  /// Deletes a cancelled/rejected reservation or one from a completed/cancelled ride.
+  /// Returns true on success, false on failure.
+  Future<bool> deleteReservation(int reservationId) async {
+    _setUpdatingReservation(true);
+    _clearError();
+
+    try {
+      await _reservationRepository.deleteReservation(reservationId);
+      _myReservations.removeWhere((r) => r.id == reservationId);
+      _setUpdatingReservation(false);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setUpdatingReservation(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to delete reservation: $e');
+      _setUpdatingReservation(false);
+      return false;
+    }
+  }
+
+  /// Clear all completed reservations
+  ///
+  /// Deletes all cancelled/rejected reservations and those from completed/cancelled rides.
+  /// Returns the number of deleted reservations, or -1 on failure.
+  Future<int> clearCompletedReservations() async {
+    _setUpdatingReservation(true);
+    _clearError();
+
+    try {
+      final deletedCount = await _reservationRepository
+          .clearCompletedReservations();
+
+      // Remove deleted reservations from local state
+      _myReservations.removeWhere((r) {
+        final status = (r.status ?? '').toUpperCase();
+        final rideStatus = (r.ride?.status ?? 'scheduled').toLowerCase();
+        return status == 'CANCELLED' ||
+            status == 'REJECTED' ||
+            rideStatus == 'completed' ||
+            rideStatus == 'cancelled';
+      });
+
+      _setUpdatingReservation(false);
+      notifyListeners();
+      return deletedCount;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setUpdatingReservation(false);
+      return -1;
+    } catch (e) {
+      _setError('Failed to clear reservations: $e');
+      _setUpdatingReservation(false);
+      return -1;
+    }
+  }
+
   /// Clear any error message
   void clearError() {
     _errorMessage = null;

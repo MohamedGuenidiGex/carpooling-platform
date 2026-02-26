@@ -724,14 +724,61 @@ class _BookedRidesTab extends StatelessWidget {
           );
         }
 
+        // Check if there are any completed reservations
+        final hasCompletedReservations = provider.myReservations.any((r) {
+          final status = (r.status ?? '').toUpperCase();
+          final rideStatus = (r.ride?.status ?? 'scheduled').toLowerCase();
+          return status == 'CANCELLED' ||
+              status == 'REJECTED' ||
+              rideStatus == 'completed' ||
+              rideStatus == 'cancelled';
+        });
+
         return RefreshIndicator(
           onRefresh: onRefresh,
           color: BrandColors.primaryRed,
           child: ListView.builder(
             padding: const EdgeInsets.all(24),
-            itemCount: provider.myReservations.length,
+            itemCount:
+                provider.myReservations.length +
+                (hasCompletedReservations ? 1 : 0),
             itemBuilder: (context, index) {
-              final reservation = provider.myReservations[index];
+              // Show Clear Completed button as first item if there are completed reservations
+              if (index == 0 && hasCompletedReservations) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        _showClearCompletedDialog(context, provider),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey[700],
+                      side: BorderSide(color: Colors.grey[300]!),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: Icon(
+                      Icons.delete_sweep_outlined,
+                      size: 20,
+                      color: Colors.grey[600],
+                    ),
+                    label: Text(
+                      'Clear Completed',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                    ),
+                  ),
+                );
+              }
+
+              // Adjust index if button is shown
+              final reservationIndex = hasCompletedReservations
+                  ? index - 1
+                  : index;
+              final reservation = provider.myReservations[reservationIndex];
               final isReadOnly =
                   reservation.isCancelled || reservation.isRejected;
               final ride = reservation.ride;
@@ -907,5 +954,49 @@ class _BookedRidesTab extends StatelessWidget {
         );
       }
     }
+  }
+
+  void _showClearCompletedDialog(
+    BuildContext context,
+    ReservationProvider provider,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Completed Reservations?'),
+        content: const Text(
+          'This will permanently delete all cancelled, rejected, and completed reservations. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final deletedCount = await provider.clearCompletedReservations();
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      deletedCount > 0
+                          ? 'Cleared $deletedCount reservation${deletedCount != 1 ? 's' : ''}'
+                          : 'No completed reservations to clear',
+                    ),
+                    backgroundColor: deletedCount > 0
+                        ? Colors.green
+                        : Colors.orange,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
   }
 }

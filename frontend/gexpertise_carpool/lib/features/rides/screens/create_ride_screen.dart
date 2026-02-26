@@ -173,10 +173,10 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     final rideData = {
       'origin': _originController.text.trim(),
       'destination': _destinationController.text.trim(),
-      'originLat': widget.startCoordinates?.latitude,
-      'originLon': widget.startCoordinates?.longitude,
-      'destinationLat': _destinationCoordinates?.latitude,
-      'destinationLon': _destinationCoordinates?.longitude,
+      'origin_lat': widget.startCoordinates?.latitude,
+      'origin_lng': widget.startCoordinates?.longitude,
+      'destination_lat': _destinationCoordinates?.latitude,
+      'destination_lng': _destinationCoordinates?.longitude,
       'date': _selectedDate!.toIso8601String(),
       'time':
           '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}',

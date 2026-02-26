@@ -255,6 +255,57 @@ class ReservationList(Resource):
             api.abort(500, f'Booking request failed: {str(e)}')
 
 
+@api.route('/clear-completed')
+class ClearCompletedReservations(Resource):
+    @jwt_required()
+    @api.doc('clear_completed_reservations', security='Bearer', description='Delete all completed reservations (cancelled, rejected, or from completed/cancelled rides) for the current user',
+        responses={
+            401: ('Unauthorized - JWT required', error_response),
+            500: ('Internal server error', error_response)
+        }
+    )
+    def delete(self):
+        """Clear all completed reservations for the current user"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            # Get all reservations for this user
+            reservations = Reservation.query.filter_by(employee_id=employee_id).all()
+            
+            deleted_count = 0
+            for reservation in reservations:
+                reservation_status = (reservation.status or '').upper()
+                ride = Ride.query.get(reservation.ride_id)
+                ride_status = (ride.status or 'scheduled').lower() if ride else 'unknown'
+                
+                # Delete if cancelled/rejected or from completed/cancelled ride
+                can_delete = (
+                    reservation_status in ['CANCELLED', 'REJECTED'] or
+                    ride_status in ['completed', 'cancelled']
+                )
+                
+                if can_delete:
+                    db.session.delete(reservation)
+                    deleted_count += 1
+            
+            db.session.commit()
+            
+            log_action(
+                action='RESERVATIONS_CLEARED',
+                employee_id=employee_id,
+                details={'deleted_count': deleted_count}
+            )
+            
+            return {
+                'message': f'Successfully deleted {deleted_count} completed reservation(s)',
+                'deleted_count': deleted_count
+            }, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            api.abort(500, f'Failed to clear reservations: {str(e)}')
+
+
 @api.route('/<int:id>/cancel')
 @api.param('id', 'Reservation ID')
 class ReservationCancel(Resource):
@@ -496,24 +547,51 @@ class ReservationReject(Resource):
 @api.param('id', 'Reservation ID')
 class ReservationDetail(Resource):
     @jwt_required()
-    @api.doc('delete_reservation', security='Bearer', description='Delete a reservation by ID',
+    @api.doc('delete_reservation', security='Bearer', description='Delete a completed reservation (cancelled, rejected, or from completed/cancelled rides). Cannot delete active reservations.',
         responses={
+            400: ('Validation error - cannot delete active reservation', error_response),
             401: ('Unauthorized - JWT required', error_response),
+            403: ('Forbidden - can only delete own reservations', error_response),
             404: ('Reservation not found', error_response),
             500: ('Internal server error', error_response)
         }
     )
     def delete(self, id):
-        """Delete a reservation by ID"""
+        """Delete a completed reservation (only cancelled/rejected or from completed rides)"""
+        employee_id = int(get_jwt_identity())
+        
         reservation = Reservation.query.get(id)
         if not reservation:
             api.abort(404, 'Reservation not found')
         
-        # Restore available seats
-        ride = Ride.query.get(reservation.ride_id)
-        if ride:
-            ride.available_seats += reservation.seats_reserved
+        # Only allow users to delete their own reservations
+        if reservation.employee_id != employee_id:
+            api.abort(403, 'You can only delete your own reservations')
         
+        # Check if reservation can be deleted (must be cancelled, rejected, or from a completed/cancelled ride)
+        reservation_status = (reservation.status or '').upper()
+        ride = Ride.query.get(reservation.ride_id)
+        ride_status = (ride.status or 'scheduled').lower() if ride else 'unknown'
+        
+        # Allow deletion if:
+        # 1. Reservation is cancelled or rejected, OR
+        # 2. Ride is completed or cancelled
+        can_delete = (
+            reservation_status in ['CANCELLED', 'REJECTED'] or
+            ride_status in ['completed', 'cancelled']
+        )
+        
+        if not can_delete:
+            api.abort(400, f'Cannot delete active reservation. Reservation status: {reservation_status}, Ride status: {ride_status}')
+        
+        # Don't restore seats for cancelled/rejected reservations (already restored during cancellation)
         db.session.delete(reservation)
         db.session.commit()
+        
+        log_action(
+            action='RESERVATION_DELETED',
+            employee_id=employee_id,
+            details={'reservation_id': id, 'status': reservation_status}
+        )
+        
         return {'message': 'Reservation deleted successfully'}, 200

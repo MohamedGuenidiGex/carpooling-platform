@@ -265,6 +265,10 @@ class RideList(Resource):
             driver_id=driver_id,
             origin=data['origin'],
             destination=data['destination'],
+            origin_lat=data.get('origin_lat'),
+            origin_lng=data.get('origin_lng'),
+            destination_lat=data.get('destination_lat'),
+            destination_lng=data.get('destination_lng'),
             departure_time=datetime.fromisoformat(data['departure_time']),
             available_seats=data['available_seats']
         )

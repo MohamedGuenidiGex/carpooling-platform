@@ -144,6 +144,35 @@ class ReservationRepository {
       throw ReservationRepositoryException('Failed to cancel reservation: $e');
     }
   }
+
+  /// Delete a completed reservation
+  ///
+  /// DELETE /reservations/{id}
+  /// Only works for cancelled/rejected reservations or completed/cancelled rides
+  Future<void> deleteReservation(int reservationId) async {
+    try {
+      await ApiClient.delete('/reservations/$reservationId');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ReservationRepositoryException('Failed to delete reservation: $e');
+    }
+  }
+
+  /// Clear all completed reservations
+  ///
+  /// DELETE /reservations/clear-completed
+  /// Deletes all cancelled/rejected reservations and reservations from completed/cancelled rides
+  Future<int> clearCompletedReservations() async {
+    try {
+      final response = await ApiClient.delete('/reservations/clear-completed');
+      return response['deleted_count'] as int? ?? 0;
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ReservationRepositoryException('Failed to clear reservations: $e');
+    }
+  }
 }
 
 /// Custom exception for ReservationRepository errors
