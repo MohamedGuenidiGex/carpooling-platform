@@ -145,6 +145,10 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
     final currentUserId = context.read<AuthProvider>().user?.id;
     final isDriver = currentUserId != null && ride.driverId == currentUserId;
 
+    debugPrint(
+      'RideDetailsScreen: currentUserId=$currentUserId, ride.driverId=${ride.driverId}, isDriver=$isDriver',
+    );
+
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
