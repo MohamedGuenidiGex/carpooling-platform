@@ -189,10 +189,16 @@ class _TripCardState extends State<TripCard> {
   /// Soft location validation for arrival
   /// Returns true if should proceed, false if cancelled
   Future<bool> _validateArrivalLocation() async {
+    debugPrint('TripCard: === ARRIVAL VALIDATION STARTED ===');
+    debugPrint('TripCard: Ride ID: ${currentRide.id}');
+    debugPrint('TripCard: Origin: ${currentRide.origin}');
+    debugPrint('TripCard: Origin Lat: ${currentRide.originLat}');
+    debugPrint('TripCard: Origin Lng: ${currentRide.originLng}');
+
     // Check if pickup coordinates are available
     if (currentRide.originLat == null || currentRide.originLng == null) {
       debugPrint(
-        'TripCard: No pickup coordinates available, skipping validation',
+        'TripCard: ⚠️ No pickup coordinates available, skipping validation',
       );
       return true; // Proceed without validation
     }
@@ -240,13 +246,19 @@ class _TripCardState extends State<TripCard> {
 
       // Soft validation: warn if > 200m
       if (distance > 200) {
+        debugPrint(
+          'TripCard: ⚠️ Driver is FAR from pickup, showing warning dialog',
+        );
         if (!mounted) return false;
-        return await _showDistanceWarningDialog(distance);
+        final result = await _showDistanceWarningDialog(distance);
+        debugPrint('TripCard: Warning dialog result: $result');
+        return result;
       }
 
+      debugPrint('TripCard: ✅ Driver is within 200m, proceeding');
       return true; // Within range, proceed
     } catch (e) {
-      debugPrint('TripCard: Location validation error: $e');
+      debugPrint('TripCard: ❌ Location validation error: $e');
       // On error, allow user to proceed
       return true;
     }
