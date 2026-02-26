@@ -377,6 +377,19 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
     if (success) {
       if (context.mounted) {
+        // Show success popup
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Request sent'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 2),
+          ),
+        );
         // Refresh ride details to show updated state
         _loadRideDetails();
       }
