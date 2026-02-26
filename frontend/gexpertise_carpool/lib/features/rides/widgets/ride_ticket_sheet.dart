@@ -105,9 +105,15 @@ class RideTicketSheet extends StatelessWidget {
   }
 
   Widget _buildHeader() {
+    final hasCoordinates =
+        ride.originLat != null &&
+        ride.originLng != null &&
+        ride.destinationLat != null &&
+        ride.destinationLng != null;
+
     return Column(
       children: [
-        // Map placeholder
+        // Map placeholder or message
         Container(
           height: 120,
           decoration: BoxDecoration(
@@ -119,10 +125,16 @@ class RideTicketSheet extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.map_outlined, size: 48, color: Colors.grey[400]),
+                Icon(
+                  hasCoordinates
+                      ? Icons.map_outlined
+                      : Icons.location_off_outlined,
+                  size: 48,
+                  color: Colors.grey[400],
+                ),
                 const SizedBox(height: 8),
                 Text(
-                  'Route Preview',
+                  hasCoordinates ? 'Route Preview' : 'Map data unavailable',
                   style: TextStyle(color: Colors.grey[500], fontSize: 12),
                 ),
               ],
@@ -143,6 +155,25 @@ class RideTicketSheet extends StatelessWidget {
           'Ride #${ride.id}',
           style: TextStyle(fontSize: 14, color: Colors.grey[600]),
         ),
+        // Show driver name for passengers
+        if (!isDriver && ride.driverName != null) ...[
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.person_outline, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                'Driver: ${ride.driverName}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

@@ -112,8 +112,13 @@ class ReservationList(Resource):
                     'ride': {
                         'id': ride.id,
                         'driver_id': ride.driver_id,
+                        'driver_name': driver.name if driver else None,
                         'origin': ride.origin,
                         'destination': ride.destination,
+                        'origin_lat': ride.origin_lat,
+                        'origin_lng': ride.origin_lng,
+                        'destination_lat': ride.destination_lat,
+                        'destination_lng': ride.destination_lng,
                         'departure_time': ride.departure_time.isoformat() if ride.departure_time else None,
                         'available_seats': ride.available_seats,
                         'status': ride.status,
