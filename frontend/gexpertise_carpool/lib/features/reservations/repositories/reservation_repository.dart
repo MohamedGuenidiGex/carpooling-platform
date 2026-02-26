@@ -91,12 +91,21 @@ class ReservationRepository {
         return [];
       }
 
-      return reservations
+      final allReservations = reservations
           .map((json) => Reservation.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      final confirmedReservations = allReservations
           .where(
-            (reservation) => reservation.status?.toLowerCase() == 'confirmed',
+            (reservation) => reservation.status?.toUpperCase() == 'CONFIRMED',
           )
           .toList();
+
+      debugPrint(
+        'ReservationRepository: Fetched ${allReservations.length} total reservations, ${confirmedReservations.length} confirmed',
+      );
+
+      return confirmedReservations;
     } on ApiException {
       rethrow;
     } catch (e) {
