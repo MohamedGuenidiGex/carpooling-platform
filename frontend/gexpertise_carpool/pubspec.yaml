@@ -33,6 +33,7 @@ dependencies:
   
   # Network & HTTP
   http: ^1.1.0
+  socket_io_client: ^2.0.3+1
   
   # Secure storage for JWT tokens
   flutter_secure_storage: ^9.2.2

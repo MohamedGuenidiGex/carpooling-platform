@@ -216,16 +216,6 @@ class ReservationList(Resource):
             passenger = Employee.query.get(employee_id)
             passenger_name = passenger.name if passenger else f'Employee #{employee_id}'
 
-            # Create notification for the requesting employee
-            notification = Notification(
-                employee_id=employee_id,
-                ride_id=ride.id,
-                message=f'New Request sent! Waiting for approval for your trip to {short_destination}.',
-                type='request',
-                is_read=False
-            )
-            db.session.add(notification)
-            
             # Create notification for the driver
             driver_notification = Notification(
                 employee_id=ride.driver_id,

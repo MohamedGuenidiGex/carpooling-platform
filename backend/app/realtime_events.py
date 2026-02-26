@@ -7,13 +7,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Active ride statuses that should trigger room auto-join
+ACTIVE_RIDE_STATUSES = ['scheduled', 'driver_en_route', 'arrived', 'in_progress', 'ACTIVE', 'FULL']
+
 
 def register_socket_handlers(socketio):
     """Register all WebSocket event handlers."""
 
     @socketio.on('connect')
     def handle_connect():
-        """Handle client connection."""
+        """Handle client connection. Auto-joins user to their active ride rooms."""
         try:
             # Get JWT token from query parameters or headers
             token = request.args.get('token')
@@ -27,6 +30,10 @@ def register_socket_handlers(socketio):
                 decoded = decode_token(token)
                 user_id = int(decoded['sub'])
                 logger.info(f'User {user_id} connected via WebSocket')
+                
+                # Auto-join user to their active ride rooms
+                _auto_join_ride_rooms(user_id)
+                
                 emit('connection_response', {'data': 'Connected to server'})
             except Exception as e:
                 logger.warning(f'Invalid token on connect: {e}')
@@ -35,6 +42,39 @@ def register_socket_handlers(socketio):
         except Exception as e:
             logger.error(f'Error in connect handler: {e}')
             return False
+    
+    def _auto_join_ride_rooms(user_id):
+        """Auto-join user to rooms for their active rides (as driver or confirmed passenger)."""
+        try:
+            from app.models import Ride, Reservation
+            
+            # Rides where user is driver
+            driver_rides = Ride.query.filter(
+                Ride.driver_id == user_id,
+                Ride.status.in_(ACTIVE_RIDE_STATUSES),
+                Ride.is_deleted == False
+            ).all()
+            
+            for ride in driver_rides:
+                room = f'ride_{ride.id}'
+                join_room(room)
+                logger.info(f'Auto-joined user {user_id} (driver) to room {room}')
+            
+            # Rides where user is confirmed passenger
+            confirmed_reservations = Reservation.query.filter(
+                Reservation.employee_id == user_id,
+                Reservation.status == 'CONFIRMED'
+            ).all()
+            
+            for reservation in confirmed_reservations:
+                ride = Ride.query.get(reservation.ride_id)
+                if ride and ride.status in ACTIVE_RIDE_STATUSES and not ride.is_deleted:
+                    room = f'ride_{ride.id}'
+                    join_room(room)
+                    logger.info(f'Auto-joined user {user_id} (passenger) to room {room}')
+                    
+        except Exception as e:
+            logger.error(f'Error auto-joining ride rooms for user {user_id}: {e}')
 
     @socketio.on('disconnect')
     def handle_disconnect():

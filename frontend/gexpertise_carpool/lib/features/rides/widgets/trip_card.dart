@@ -31,50 +31,14 @@ class _TripCardState extends State<TripCard> {
   void initState() {
     super.initState();
     currentRide = widget.activeRide;
-    _setupStatusPolling();
-  }
-
-  void _setupStatusPolling() {
-    // Poll for status updates every 5 seconds
-    // This will be replaced with WebSocket listener when WebSocketService is available
-    Future.doWhile(() async {
-      if (!mounted) return false;
-
-      await Future.delayed(const Duration(seconds: 5));
-
-      if (mounted) {
-        final rideProvider = context.read<RideProvider>();
-        try {
-          final updatedRide = await rideProvider.getRideDetails(
-            currentRide.id!,
-          );
-          if (updatedRide) {
-            final newRide = rideProvider.currentRide;
-            if (newRide != null) {
-              setState(() => currentRide = newRide);
-
-              // If ride is completed or cancelled, notify parent
-              final status = newRide.status?.toLowerCase() ?? '';
-              if (status == 'completed' || status == 'cancelled') {
-                widget.onRideCompleted();
-                return false; // Stop polling
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('Error polling ride status: $e');
-        }
-      }
-
-      return mounted;
-    });
   }
 
   @override
   void didUpdateWidget(TripCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.activeRide.id != widget.activeRide.id) {
-      currentRide = widget.activeRide;
+    if (oldWidget.activeRide.id != widget.activeRide.id ||
+        oldWidget.activeRide.status != widget.activeRide.status) {
+      setState(() => currentRide = widget.activeRide);
     }
   }
 

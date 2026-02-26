@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:gexpertise_carpool/features/auth/providers/auth_provider.dart';
@@ -5,6 +6,7 @@ import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/widgets/trip_card.dart';
 import 'package:gexpertise_carpool/features/reservations/providers/reservation_provider.dart';
+import 'package:gexpertise_carpool/core/services/websocket_service.dart';
 import '../theme/brand_text_styles.dart';
 
 /// Home Screen for GExpertise Carpool MVP
@@ -16,26 +18,53 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Ride? activeRide;
   bool isLoading = true;
   int? currentUserId;
+  final WebSocketService _wsService = WebSocketService();
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeScreen();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    _wsService.removeAllListeners('ride_status_updated');
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshActiveRide();
+    }
   }
 
   void _initializeScreen() async {
     final authProvider = context.read<AuthProvider>();
-    final rideProvider = context.read<RideProvider>();
-    final reservationProvider = context.read<ReservationProvider>();
-
     currentUserId = authProvider.user?.id;
 
     if (currentUserId != null) {
-      await _fetchActiveRide(rideProvider, reservationProvider);
+      // Connect WebSocket
+      final token = authProvider.token;
+      if (token != null) {
+        _wsService.connect(token);
+        _setupWebSocketListener();
+      }
+
+      await _refreshActiveRide();
+
+      // Start periodic polling as fallback (every 10 seconds)
+      _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        _refreshActiveRide();
+      });
     }
 
     if (mounted) {
@@ -43,18 +72,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _fetchActiveRide(
-    RideProvider rideProvider,
-    ReservationProvider reservationProvider,
-  ) async {
-    try {
-      if (currentUserId == null) {
-        debugPrint(
-          'HomeScreen: currentUserId is null, skipping active ride fetch',
-        );
-        return;
-      }
+  void _setupWebSocketListener() {
+    _wsService.onRideStatusUpdate((data) {
+      debugPrint('HomeScreen: Received ride_status_updated: $data');
+      if (!mounted) return;
+      _refreshActiveRide();
+    });
+  }
 
+  Future<void> _refreshActiveRide() async {
+    if (!mounted || currentUserId == null) return;
+
+    final rideProvider = context.read<RideProvider>();
+    final reservationProvider = context.read<ReservationProvider>();
+
+    try {
       debugPrint('HomeScreen: Fetching active rides for user $currentUserId');
       final List<Ride> candidateRides = [];
 
@@ -89,21 +121,29 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // STEP 3: Filter for active rides and sort by nearest upcoming
+      // STEP 3: Sort by nearest upcoming
       candidateRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));
       debugPrint(
         'HomeScreen: Total ${candidateRides.length} active rides found',
       );
 
-      if (candidateRides.isNotEmpty) {
-        debugPrint(
-          'HomeScreen: Setting active ride to ${candidateRides.first.id}',
-        );
-        if (mounted) {
-          setState(() => activeRide = candidateRides.first);
+      if (mounted) {
+        if (candidateRides.isNotEmpty) {
+          final newActiveRide = candidateRides.first;
+          debugPrint(
+            'HomeScreen: Setting active ride to ${newActiveRide.id} (status: ${newActiveRide.status})',
+          );
+
+          // Join WebSocket room for this ride
+          _wsService.joinRide(newActiveRide.id!);
+
+          setState(() => activeRide = newActiveRide);
+        } else {
+          debugPrint('HomeScreen: No active rides found');
+          if (activeRide != null) {
+            setState(() => activeRide = null);
+          }
         }
-      } else {
-        debugPrint('HomeScreen: No active rides found');
       }
     } catch (e) {
       debugPrint('HomeScreen: Error fetching active ride: $e');
