@@ -419,39 +419,38 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
               onLocationSelected: _onLocationSelected,
             ),
 
-          // Layer 4: Current Location Button (Bottom Right, above panel)
+          // Layer 4: Current Location Button (Bottom Right, above panels)
           _CurrentLocationButton(
             onPressed: _goToCurrentLocation,
-            bottomOffset: hasActiveRide ? 100 : 200,
+            bottomOffset: hasActiveRide ? 280 : 200,
           ),
 
-          // Layer 5: Bottom panel — TripCard sheet OR action panel
+          // Layer 5: Bottom action panel (always visible unless searching)
+          if (!_isSearching)
+            _BottomActionPanel(
+              onFindRide: _startPassengerSearch,
+              onOfferRide: _startDriverSearch,
+            )
+          else
+            _CancelPanel(onCancel: _cancelSearch),
+
+          // Layer 6: TripCard bottom sheet (above action panel when active)
           if (hasActiveRide)
             Positioned(
               left: 0,
               right: 0,
-              bottom: 0,
+              bottom: 160, // Above the action panel
               child: AnimatedSlide(
                 duration: const Duration(milliseconds: 400),
                 curve: Curves.easeOutCubic,
                 offset: _sheetVisible ? Offset.zero : const Offset(0, 1),
-                child: SafeArea(
-                  top: false,
-                  child: TripCard(
-                    activeRide: _activeRide!,
-                    currentUserId: _currentUserId!,
-                    isDriver: _activeRide!.driverId == _currentUserId,
-                    onRideCompleted: _handleRideCompleted,
-                  ),
+                child: TripCard(
+                  activeRide: _activeRide!,
+                  currentUserId: _currentUserId!,
+                  isDriver: _activeRide!.driverId == _currentUserId,
+                  onRideCompleted: _handleRideCompleted,
                 ),
               ),
-            )
-          else if (_isSearching)
-            _CancelPanel(onCancel: _cancelSearch)
-          else
-            _BottomActionPanel(
-              onFindRide: _startPassengerSearch,
-              onOfferRide: _startDriverSearch,
             ),
         ],
       ),
