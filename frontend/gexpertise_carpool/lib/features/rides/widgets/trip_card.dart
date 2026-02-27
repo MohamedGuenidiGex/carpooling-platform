@@ -24,14 +24,53 @@ class TripCard extends StatefulWidget {
   State<TripCard> createState() => _TripCardState();
 }
 
-class _TripCardState extends State<TripCard> {
+class _TripCardState extends State<TripCard>
+    with SingleTickerProviderStateMixin {
   late Ride currentRide;
   bool isLoading = false;
+  bool _isExpanded = false;
+  late AnimationController _animController;
+  late Animation<double> _expandAnimation;
+
+  /// Active statuses that default to expanded mode
+  static const _activeStatuses = {'driver_en_route', 'arrived', 'in_progress'};
 
   @override
   void initState() {
     super.initState();
     currentRide = widget.activeRide;
+    _isExpanded = _shouldDefaultExpanded(currentRide);
+
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: _isExpanded ? 1.0 : 0.0,
+    );
+    _expandAnimation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  bool _shouldDefaultExpanded(Ride ride) {
+    final status = ride.status?.toLowerCase() ?? '';
+    return _activeStatuses.contains(status);
+  }
+
+  void _toggleExpanded() {
+    setState(() => _isExpanded = !_isExpanded);
+    if (_isExpanded) {
+      _animController.forward();
+    } else {
+      _animController.reverse();
+    }
   }
 
   @override
@@ -40,6 +79,12 @@ class _TripCardState extends State<TripCard> {
     if (oldWidget.activeRide.id != widget.activeRide.id ||
         oldWidget.activeRide.status != widget.activeRide.status) {
       setState(() => currentRide = widget.activeRide);
+      // Auto-expand when ride transitions to an active state
+      final shouldExpand = _shouldDefaultExpanded(widget.activeRide);
+      if (shouldExpand && !_isExpanded) {
+        _isExpanded = true;
+        _animController.forward();
+      }
     }
   }
 
@@ -447,6 +492,12 @@ class _TripCardState extends State<TripCard> {
     return widget.isDriver && status != 'completed' && status != 'cancelled';
   }
 
+  // Shorten long addresses to first meaningful part
+  String _shortAddress(String addr) {
+    final parts = addr.split(',');
+    return parts.first.trim();
+  }
+
   @override
   Widget build(BuildContext context) {
     final statusLabel = _getStatusLabel(currentRide.status ?? 'scheduled');
@@ -456,218 +507,273 @@ class _TripCardState extends State<TripCard> {
       'MMM d, h:mm a',
     ).format(currentRide.departureTime);
 
-    // Shorten long addresses to first meaningful part
-    String shortAddress(String addr) {
-      final parts = addr.split(',');
-      return parts.first.trim();
-    }
-
     return Consumer<RideProvider>(
       builder: (context, rideProvider, _) {
-        return Material(
-          color: Colors.transparent,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, -4),
-                  spreadRadius: -2,
+        return GestureDetector(
+          onTap: _toggleExpanded,
+          onVerticalDragEnd: (details) {
+            // Swipe up → expand, swipe down → collapse
+            if (details.primaryVelocity != null) {
+              if (details.primaryVelocity! < -200 && !_isExpanded) {
+                _toggleExpanded();
+              } else if (details.primaryVelocity! > 200 && _isExpanded) {
+                _toggleExpanded();
+              }
+            }
+          },
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle bar
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, -4),
+                    spreadRadius: -2,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle bar
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
 
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Top row: Status chip + departure time
-                      Row(
-                        children: [
-                          // Status chip
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(statusIcon, size: 14, color: statusColor),
-                                const SizedBox(width: 5),
-                                Text(
-                                  statusLabel,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: statusColor,
-                                  ),
-                                ),
-                              ],
-                            ),
+                  // ── Collapsed content (always visible) ──
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Row(
+                      children: [
+                        // Status chip
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
                           ),
-                          const Spacer(),
-                          // Departure time
-                          Row(
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.access_time_rounded,
-                                size: 14,
-                                color: Colors.grey[500],
-                              ),
-                              const SizedBox(width: 4),
+                              Icon(statusIcon, size: 14, color: statusColor),
+                              const SizedBox(width: 5),
                               Text(
-                                formattedTime,
+                                statusLabel,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey[600],
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  color: statusColor,
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Route summary: Origin → Destination
-                      Row(
-                        children: [
-                          // Origin dot
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: BrandColors.primaryRed,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: BrandColors.primaryRed.withOpacity(0.3),
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              shortAddress(currentRide.origin),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      // Connecting line
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: Container(
-                          width: 2,
-                          height: 20,
-                          color: Colors.grey[300],
                         ),
-                      ),
-                      Row(
-                        children: [
-                          // Destination dot
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.green.withOpacity(0.3),
-                                width: 2,
+                        const SizedBox(width: 10),
+                        // Compact route
+                        Expanded(
+                          child: Text(
+                            '${_shortAddress(currentRide.origin)} → ${_shortAddress(currentRide.destination)}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Departure time
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.access_time_rounded,
+                              size: 14,
+                              color: Colors.grey[500],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              formattedTime,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
+                          ],
+                        ),
+                        // Expand/collapse chevron
+                        AnimatedBuilder(
+                          animation: _expandAnimation,
+                          builder: (context, child) => Transform.rotate(
+                            angle: _expandAnimation.value * 3.14159,
+                            child: child,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              shortAddress(currentRide.destination),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                          child: Icon(
+                            Icons.keyboard_arrow_up,
+                            size: 20,
+                            color: Colors.grey[400],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
+                        ),
+                      ],
+                    ),
+                  ),
 
-                      // Primary Action Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: _isDriverAction() && !isLoading
-                              ? () => _handlePrimaryAction(rideProvider)
-                              : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: BrandColors.primaryRed,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey[200],
-                            disabledForegroundColor: Colors.grey[500],
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
+                  // ── Expanded content (animated) ──
+                  SizeTransition(
+                    sizeFactor: _expandAnimation,
+                    axisAlignment: -1.0,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Divider(height: 1),
+                          const SizedBox(height: 14),
+
+                          // Full route: Origin → Destination
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: BrandColors.primaryRed,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: BrandColors.primaryRed.withOpacity(
+                                      0.3,
                                     ),
-                                  ),
-                                )
-                              : Text(
-                                  _getPrimaryButtonLabel(),
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
+                                    width: 2,
                                   ),
                                 ),
-                        ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _shortAddress(currentRide.origin),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Container(
+                              width: 2,
+                              height: 20,
+                              color: Colors.grey[300],
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.green.withOpacity(0.3),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _shortAddress(currentRide.destination),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Primary Action Button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: _isDriverAction() && !isLoading
+                                  ? () => _handlePrimaryAction(rideProvider)
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: BrandColors.primaryRed,
+                                foregroundColor: Colors.white,
+                                disabledBackgroundColor: Colors.grey[200],
+                                disabledForegroundColor: Colors.grey[500],
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                      ),
+                                    )
+                                  : Text(
+                                      _getPrimaryButtonLabel(),
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+
+                  // Bottom padding when collapsed
+                  AnimatedBuilder(
+                    animation: _expandAnimation,
+                    builder: (context, _) =>
+                        SizedBox(height: 12 * (1 - _expandAnimation.value)),
+                  ),
+                ],
+              ),
             ),
           ),
         );

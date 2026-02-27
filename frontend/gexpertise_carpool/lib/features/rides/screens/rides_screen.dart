@@ -48,6 +48,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
 
   // Active ride detection state
   Ride? _activeRide;
+  bool _sheetVisible = false;
   int? _currentUserId;
   final WebSocketService _wsService = WebSocketService();
   Timer? _rideCheckTimer;
@@ -110,6 +111,41 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Active ride statuses that always qualify for display
+  static const _activeStatuses = {'driver_en_route', 'arrived', 'in_progress'};
+
+  /// Check if a ride qualifies for the trip bottom sheet
+  bool _isEligibleForSheet(Ride ride) {
+    final status = ride.status?.toLowerCase() ?? '';
+    final now = DateTime.now();
+
+    // Always show active-state rides
+    if (_activeStatuses.contains(status)) return true;
+
+    // Show scheduled rides only within 10 minutes of departure
+    if (status == 'scheduled') {
+      final minutesUntil = ride.departureTime.difference(now).inMinutes;
+      return minutesUntil <= 10 && ride.departureTime.isAfter(now);
+    }
+
+    return false;
+  }
+
+  /// Priority sort: active states first, then scheduled, then by departure
+  int _ridePriority(Ride a, Ride b) {
+    final aStatus = a.status?.toLowerCase() ?? '';
+    final bStatus = b.status?.toLowerCase() ?? '';
+    final aActive = _activeStatuses.contains(aStatus);
+    final bActive = _activeStatuses.contains(bStatus);
+
+    // Active statuses take priority over scheduled
+    if (aActive && !bActive) return -1;
+    if (!aActive && bActive) return 1;
+
+    // Within same tier, nearest departure first
+    return a.departureTime.compareTo(b.departureTime);
+  }
+
   /// Fetch and determine the active ride for the current user
   Future<void> _refreshActiveRide() async {
     if (!mounted || _currentUserId == null) return;
@@ -142,25 +178,38 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
         }
       }
 
-      // 3. Pick nearest by departure time
-      candidateRides.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+      // 3. Filter by strict visibility rules
+      final eligible = candidateRides.where(_isEligibleForSheet).toList();
+      debugPrint(
+        'RidesScreen: ${candidateRides.length} total candidates, ${eligible.length} eligible for sheet',
+      );
+
+      // 4. Sort by priority (active states first, then nearest departure)
+      eligible.sort(_ridePriority);
 
       if (!mounted) return;
 
-      if (candidateRides.isNotEmpty) {
-        final selected = candidateRides.first;
+      if (eligible.isNotEmpty) {
+        final selected = eligible.first;
         debugPrint(
           'RidesScreen: Active ride selected: ID=${selected.id}, status=${selected.status}',
         );
-        debugPrint(
-          'RidesScreen: Ride coordinates - originLat=${selected.originLat}, originLng=${selected.originLng}',
-        );
         _wsService.joinRide(selected.id!);
+        final wasNull = _activeRide == null;
         setState(() => _activeRide = selected);
+        // Trigger slide-up after frame if this is a new appearance
+        if (wasNull) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _sheetVisible = true);
+          });
+        }
       } else {
-        debugPrint('RidesScreen: No active rides found');
+        debugPrint('RidesScreen: No eligible rides for sheet');
         if (_activeRide != null) {
-          setState(() => _activeRide = null);
+          setState(() {
+            _activeRide = null;
+            _sheetVisible = false;
+          });
         }
       }
     } catch (e) {
@@ -170,7 +219,10 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
 
   void _handleRideCompleted() {
     if (mounted) {
-      setState(() => _activeRide = null);
+      setState(() {
+        _activeRide = null;
+        _sheetVisible = false;
+      });
     }
   }
 
@@ -368,22 +420,30 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
             ),
 
           // Layer 4: Current Location Button (Bottom Right, above panel)
-          if (!hasActiveRide)
-            _CurrentLocationButton(onPressed: _goToCurrentLocation),
+          _CurrentLocationButton(
+            onPressed: _goToCurrentLocation,
+            bottomOffset: hasActiveRide ? 100 : 200,
+          ),
 
-          // Layer 5: Bottom panel — TripCard overlay OR action panel
+          // Layer 5: Bottom panel — TripCard sheet OR action panel
           if (hasActiveRide)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutCubic,
-              bottom: 24,
-              left: 16,
-              right: 16,
-              child: TripCard(
-                activeRide: _activeRide!,
-                currentUserId: _currentUserId!,
-                isDriver: _activeRide!.driverId == _currentUserId,
-                onRideCompleted: _handleRideCompleted,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutCubic,
+                offset: _sheetVisible ? Offset.zero : const Offset(0, 1),
+                child: SafeArea(
+                  top: false,
+                  child: TripCard(
+                    activeRide: _activeRide!,
+                    currentUserId: _currentUserId!,
+                    isDriver: _activeRide!.driverId == _currentUserId,
+                    onRideCompleted: _handleRideCompleted,
+                  ),
+                ),
               ),
             )
           else if (_isSearching)
@@ -521,14 +581,18 @@ class _MenuButton extends StatelessWidget {
 /// Floating action button to re-center the map on user's location.
 class _CurrentLocationButton extends StatelessWidget {
   final VoidCallback onPressed;
+  final double bottomOffset;
 
-  const _CurrentLocationButton({required this.onPressed});
+  const _CurrentLocationButton({
+    required this.onPressed,
+    this.bottomOffset = 200,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
       right: 16,
-      bottom: 200, // Above the bottom action panel
+      bottom: bottomOffset,
       child: SafeArea(
         top: false,
         child: FloatingActionButton(
