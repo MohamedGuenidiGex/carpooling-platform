@@ -32,8 +32,12 @@ class _TripCardState extends State<TripCard>
   late AnimationController _animController;
   late Animation<double> _expandAnimation;
 
-  /// Active statuses that default to expanded mode
-  static const _activeStatuses = {'driver_en_route', 'arrived', 'in_progress'};
+  /// Lifecycle statuses that default to expanded mode
+  static const _lifecycleStatuses = {
+    'driver_en_route',
+    'arrived',
+    'in_progress',
+  };
 
   @override
   void initState() {
@@ -61,7 +65,9 @@ class _TripCardState extends State<TripCard>
 
   bool _shouldDefaultExpanded(Ride ride) {
     final status = ride.status?.toLowerCase() ?? '';
-    return _activeStatuses.contains(status);
+    // Only lifecycle statuses (driver_en_route, arrived, in_progress) expand by default
+    // active/full/scheduled remain collapsed until user taps
+    return _lifecycleStatuses.contains(status);
   }
 
   void _toggleExpanded() {
@@ -93,6 +99,10 @@ class _TripCardState extends State<TripCard>
     switch (lowerStatus) {
       case 'scheduled':
         return 'Scheduled';
+      case 'active':
+        return 'Active';
+      case 'full':
+        return 'Full';
       case 'driver_en_route':
         return 'Driver En Route';
       case 'arrived':
@@ -113,6 +123,10 @@ class _TripCardState extends State<TripCard>
     switch (lowerStatus) {
       case 'scheduled':
         return Colors.blue;
+      case 'active':
+        return Colors.teal;
+      case 'full':
+        return Colors.indigo;
       case 'driver_en_route':
         return Colors.orange;
       case 'arrived':
@@ -133,6 +147,10 @@ class _TripCardState extends State<TripCard>
     switch (lowerStatus) {
       case 'scheduled':
         return Icons.schedule;
+      case 'active':
+        return Icons.check_circle_outline;
+      case 'full':
+        return Icons.people;
       case 'driver_en_route':
         return Icons.directions_car;
       case 'arrived':

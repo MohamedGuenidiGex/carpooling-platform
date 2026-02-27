@@ -111,16 +111,25 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Active ride statuses that always qualify for display
+  /// Lifecycle statuses that always qualify for display (expanded by default)
   static const _activeStatuses = {'driver_en_route', 'arrived', 'in_progress'};
+
+  /// Terminal statuses that should never show the sheet
+  static const _terminalStatuses = {'completed', 'cancelled'};
 
   /// Check if a ride qualifies for the trip bottom sheet
   bool _isEligibleForSheet(Ride ride) {
     final status = ride.status?.toLowerCase() ?? '';
     final now = DateTime.now();
 
-    // Always show active-state rides
+    // Never show completed or cancelled rides
+    if (_terminalStatuses.contains(status)) return false;
+
+    // Always show lifecycle rides (driver_en_route, arrived, in_progress)
     if (_activeStatuses.contains(status)) return true;
+
+    // Show active/full rides (driver has accepted passengers)
+    if (status == 'active' || status == 'full') return true;
 
     // Show scheduled rides only within 10 minutes of departure
     if (status == 'scheduled') {
