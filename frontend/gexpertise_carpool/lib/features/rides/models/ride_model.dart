@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:gexpertise_carpool/features/reservations/models/reservation_model.dart';
 
 /// Ride Model
@@ -45,6 +46,13 @@ class Ride {
 
   /// Create Ride from JSON response
   factory Ride.fromJson(Map<String, dynamic> json) {
+    // Debug: Log raw JSON to see if coordinates are present
+    debugPrint('Ride.fromJson: Parsing ride ID ${json['id']}');
+    debugPrint('  origin_lat in JSON: ${json['origin_lat']}');
+    debugPrint('  origin_lng in JSON: ${json['origin_lng']}');
+    debugPrint('  destination_lat in JSON: ${json['destination_lat']}');
+    debugPrint('  destination_lng in JSON: ${json['destination_lng']}');
+
     // Extract driver info from nested driver object if present
     String? driverName;
     String? driverEmail;

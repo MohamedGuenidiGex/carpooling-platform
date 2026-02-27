@@ -152,6 +152,9 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
         debugPrint(
           'RidesScreen: Active ride selected: ID=${selected.id}, status=${selected.status}',
         );
+        debugPrint(
+          'RidesScreen: Ride coordinates - originLat=${selected.originLat}, originLng=${selected.originLng}',
+        );
         _wsService.joinRide(selected.id!);
         setState(() => _activeRide = selected);
       } else {

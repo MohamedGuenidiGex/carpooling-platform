@@ -21,6 +21,10 @@ ride_create = api.model('RideCreate', {
     'driver_id': fields.Integer(required=True, description='Employee ID of the driver'),
     'origin': fields.String(required=True, description='Pickup location'),
     'destination': fields.String(required=True, description='Drop-off location'),
+    'origin_lat': fields.Float(required=False, description='Origin latitude'),
+    'origin_lng': fields.Float(required=False, description='Origin longitude'),
+    'destination_lat': fields.Float(required=False, description='Destination latitude'),
+    'destination_lng': fields.Float(required=False, description='Destination longitude'),
     'departure_time': fields.DateTime(required=True, description='Departure datetime (ISO)'),
     'available_seats': fields.Integer(required=True, description='Seats available')
 })
@@ -28,8 +32,13 @@ ride_create = api.model('RideCreate', {
 ride_response = api.model('RideResponse', {
     'id': fields.Integer(description='Ride ID'),
     'driver_id': fields.Integer(description='Employee ID of the driver'),
+    'driver_name': fields.String(description='Driver name'),
     'origin': fields.String(description='Pickup location'),
     'destination': fields.String(description='Drop-off location'),
+    'origin_lat': fields.Float(description='Origin latitude'),
+    'origin_lng': fields.Float(description='Origin longitude'),
+    'destination_lat': fields.Float(description='Destination latitude'),
+    'destination_lng': fields.Float(description='Destination longitude'),
     'departure_time': fields.DateTime(description='Departure datetime (ISO)'),
     'available_seats': fields.Integer(description='Seats available'),
     'status': fields.String(description='Ride status (ACTIVE/FULL/COMPLETED)'),
@@ -229,9 +238,16 @@ class RideList(Resource):
 
         # Execute paginated query
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        serialized_items = serialize_rides_list(pagination.items)
+        
+        # Debug: Log coordinates in response
+        for item in serialized_items:
+            print(f"DEBUG: Returning ride {item['id']} with coordinates: "
+                  f"origin_lat={item.get('origin_lat')}, origin_lng={item.get('origin_lng')}")
 
         return {
-            'items': serialize_rides_list(pagination.items),
+            'items': serialized_items,
             'page': pagination.page,
             'per_page': pagination.per_page,
             'total_items': pagination.total,
@@ -283,6 +299,13 @@ class RideList(Resource):
         )
         db.session.add(ride)
         db.session.commit()
+        
+        # Debug: Verify what was saved to database
+        print(f"DEBUG: After commit, ride object has:")
+        print(f"  ride.origin_lat: {ride.origin_lat}")
+        print(f"  ride.origin_lng: {ride.origin_lng}")
+        print(f"  ride.destination_lat: {ride.destination_lat}")
+        print(f"  ride.destination_lng: {ride.destination_lng}")
 
         # Log ride creation
         log_action(

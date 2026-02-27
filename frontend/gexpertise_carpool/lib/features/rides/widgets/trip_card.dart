@@ -194,6 +194,10 @@ class _TripCardState extends State<TripCard> {
     debugPrint('TripCard: Origin: ${currentRide.origin}');
     debugPrint('TripCard: Origin Lat: ${currentRide.originLat}');
     debugPrint('TripCard: Origin Lng: ${currentRide.originLng}');
+    debugPrint('TripCard: Destination: ${currentRide.destination}');
+    debugPrint('TripCard: Destination Lat: ${currentRide.destinationLat}');
+    debugPrint('TripCard: Destination Lng: ${currentRide.destinationLng}');
+    debugPrint('TripCard: Full ride object: $currentRide');
 
     // Check if pickup coordinates are available
     if (currentRide.originLat == null || currentRide.originLng == null) {
