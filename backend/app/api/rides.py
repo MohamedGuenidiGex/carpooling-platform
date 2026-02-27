@@ -261,6 +261,15 @@ class RideList(Resource):
         if not driver:
             api.abort(404, 'Driver not found')
         
+        # Debug: Log received coordinate data
+        print(f"DEBUG: Ride creation request data:")
+        print(f"  Origin: {data.get('origin')}")
+        print(f"  origin_lat: {data.get('origin_lat')} (type: {type(data.get('origin_lat'))})")
+        print(f"  origin_lng: {data.get('origin_lng')} (type: {type(data.get('origin_lng'))})")
+        print(f"  Destination: {data.get('destination')}")
+        print(f"  destination_lat: {data.get('destination_lat')} (type: {type(data.get('destination_lat'))})")
+        print(f"  destination_lng: {data.get('destination_lng')} (type: {type(data.get('destination_lng'))})")
+        
         ride = Ride(
             driver_id=driver_id,
             origin=data['origin'],

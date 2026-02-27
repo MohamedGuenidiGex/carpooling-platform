@@ -68,6 +68,14 @@ class RideProvider extends ChangeNotifier {
         destinationLng: rideData['destination_lng'] as double?,
       );
 
+      debugPrint('RideProvider: Creating ride with coordinates:');
+      debugPrint('  Origin: ${ride.origin}');
+      debugPrint('  Origin Lat: ${ride.originLat}');
+      debugPrint('  Origin Lng: ${ride.originLng}');
+      debugPrint('  Destination: ${ride.destination}');
+      debugPrint('  Destination Lat: ${ride.destinationLat}');
+      debugPrint('  Destination Lng: ${ride.destinationLng}');
+
       final createdRide = await _rideRepository.createRide(ride);
       _currentRide = createdRide;
       _myOfferedRides.add(createdRide);

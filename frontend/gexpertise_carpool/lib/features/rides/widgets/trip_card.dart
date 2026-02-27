@@ -200,6 +200,32 @@ class _TripCardState extends State<TripCard> {
       debugPrint(
         'TripCard: ⚠️ No pickup coordinates available, skipping validation',
       );
+      debugPrint(
+        'TripCard: This ride was created without GPS coordinates. '
+        'Location validation only works for rides created with GPS data.',
+      );
+
+      // Show info dialog to driver
+      if (mounted) {
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Location Validation Unavailable'),
+            content: const Text(
+              'This ride was created without GPS coordinates. '
+              'Location validation cannot be performed.\n\n'
+              'New rides created from the map will include GPS data for arrival validation.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+
       return true; // Proceed without validation
     }
 
