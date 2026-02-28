@@ -163,6 +163,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -180,17 +181,25 @@ class _FindRideScreenState extends State<FindRideScreen> {
         ),
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Map Preview (shows origin and destination)
-            if (widget.startCoordinates != null ||
-                _destinationCoordinates != null)
-              _buildMapPreview(),
-            // Search Form (fixed at top)
-            _buildSearchForm(),
-            // Results List (scrollable)
-            Expanded(child: _buildResultsList()),
-          ],
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Map Preview (shows origin and destination)
+                if (widget.startCoordinates != null ||
+                    _destinationCoordinates != null)
+                  _buildMapPreview(),
+                // Search Form
+                _buildSearchForm(),
+                // Results List (constrained height)
+                _buildResultsList(),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -576,13 +585,19 @@ class _FindRideScreenState extends State<FindRideScreen> {
     return Consumer<RideProvider>(
       builder: (context, provider, child) {
         if (provider.isSearching) {
-          return const Center(
-            child: CircularProgressIndicator(color: BrandColors.primaryRed),
+          return Container(
+            height: 200,
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(
+              color: BrandColors.primaryRed,
+            ),
           );
         }
 
         if (provider.errorMessage != null) {
-          return Center(
+          return Container(
+            height: 300,
+            alignment: Alignment.center,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -620,7 +635,9 @@ class _FindRideScreenState extends State<FindRideScreen> {
         }
 
         if (provider.searchResults.isEmpty) {
-          return Center(
+          return Container(
+            height: 300,
+            alignment: Alignment.center,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -649,6 +666,8 @@ class _FindRideScreenState extends State<FindRideScreen> {
         }
 
         return ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.all(24),
           itemCount: provider.searchResults.length,
           itemBuilder: (context, index) {
