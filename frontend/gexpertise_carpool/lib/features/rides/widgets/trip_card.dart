@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/core/theme/brand_colors.dart';
+import 'package:gexpertise_carpool/core/services/websocket_service.dart';
 
 class TripCard extends StatefulWidget {
   final Ride activeRide;
@@ -32,6 +34,10 @@ class _TripCardState extends State<TripCard>
   late AnimationController _animController;
   late Animation<double> _expandAnimation;
 
+  // GPS location streaming
+  StreamSubscription<Position>? _locationStreamSubscription;
+  final WebSocketService _wsService = WebSocketService();
+
   /// Lifecycle statuses that default to expanded mode
   static const _lifecycleStatuses = {
     'driver_en_route',
@@ -55,10 +61,16 @@ class _TripCardState extends State<TripCard>
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
+
+    // Start GPS streaming if driver and ride is active
+    if (widget.isDriver) {
+      _startLocationStreamingIfNeeded();
+    }
   }
 
   @override
   void dispose() {
+    _stopLocationStreaming();
     _animController.dispose();
     super.dispose();
   }
@@ -90,6 +102,11 @@ class _TripCardState extends State<TripCard>
       if (shouldExpand && !_isExpanded) {
         _isExpanded = true;
         _animController.forward();
+      }
+
+      // Update GPS streaming based on new status
+      if (widget.isDriver) {
+        _startLocationStreamingIfNeeded();
       }
     }
   }
@@ -537,6 +554,124 @@ class _TripCardState extends State<TripCard>
   String _shortAddress(String addr) {
     final parts = addr.split(',');
     return parts.first.trim();
+  }
+
+  /// Start GPS location streaming if ride is in active status
+  Future<void> _startLocationStreamingIfNeeded() async {
+    final status = currentRide.status?.toLowerCase() ?? '';
+    final isActiveStatus =
+        status == 'driver_en_route' || status == 'in_progress';
+
+    if (!isActiveStatus) {
+      _stopLocationStreaming();
+      return;
+    }
+
+    // Already streaming
+    if (_locationStreamSubscription != null) {
+      return;
+    }
+
+    // Request location permission
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            _showLocationPermissionDialog();
+          }
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          _showLocationPermissionDialog();
+        }
+        return;
+      }
+
+      // Start location stream
+      const LocationSettings locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10, // Update every 10 meters
+      );
+
+      _locationStreamSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: locationSettings,
+          ).listen(
+            (Position position) {
+              _sendLocationUpdate(position);
+            },
+            onError: (error) {
+              debugPrint('TripCard: Location stream error: $error');
+            },
+          );
+
+      debugPrint(
+        'TripCard: Started driver location streaming for ride ${currentRide.id}',
+      );
+    } catch (e) {
+      debugPrint('TripCard: Failed to start location streaming: $e');
+    }
+  }
+
+  /// Stop GPS location streaming
+  void _stopLocationStreaming() {
+    if (_locationStreamSubscription != null) {
+      _locationStreamSubscription!.cancel();
+      _locationStreamSubscription = null;
+      debugPrint('TripCard: Stopped driver location streaming');
+    }
+  }
+
+  /// Send location update to backend via WebSocket
+  void _sendLocationUpdate(Position position) {
+    if (currentRide.id == null) return;
+    if (!_wsService.isConnected) return;
+
+    final status = currentRide.status?.toLowerCase() ?? '';
+    final isActiveStatus =
+        status == 'driver_en_route' || status == 'in_progress';
+
+    if (!isActiveStatus) {
+      _stopLocationStreaming();
+      return;
+    }
+
+    _wsService.sendDriverLocationUpdate(
+      rideId: currentRide.id!,
+      lat: position.latitude,
+      lng: position.longitude,
+      timestamp: DateTime.now().toIso8601String(),
+    );
+
+    debugPrint(
+      'TripCard: Sent driver location update: '
+      '(${position.latitude}, ${position.longitude})',
+    );
+  }
+
+  /// Show dialog when location permission is denied
+  void _showLocationPermissionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Location Permission Required'),
+        content: const Text(
+          'Location permission is required to share your real-time location '
+          'with passengers during the ride. Please enable location access in settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

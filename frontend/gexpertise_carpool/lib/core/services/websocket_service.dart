@@ -161,4 +161,29 @@ class WebSocketService {
       _eventListeners.remove(event);
     }
   }
+
+  /// Send driver location update to backend
+  void sendDriverLocationUpdate({
+    required int rideId,
+    required double lat,
+    required double lng,
+    required String timestamp,
+  }) {
+    if (!_isConnected || _socket == null) {
+      debugPrint('WebSocket: Cannot send location - not connected');
+      return;
+    }
+
+    final payload = {
+      'ride_id': rideId,
+      'lat': lat,
+      'lng': lng,
+      'timestamp': timestamp,
+    };
+
+    _socket!.emit('update_driver_location', payload);
+    debugPrint(
+      'WebSocket: Sent driver location update for ride $rideId: ($lat, $lng)',
+    );
+  }
 }
