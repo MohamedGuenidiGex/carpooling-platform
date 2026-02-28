@@ -507,7 +507,12 @@ class _MapBackgroundState extends State<_MapBackground>
   @override
   void initState() {
     super.initState();
-    _setupDriverLocationListener();
+    // Defer listener setup until after first frame when WebSocket is connected
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _setupDriverLocationListener();
+      }
+    });
   }
 
   @override
