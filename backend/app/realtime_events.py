@@ -131,6 +131,125 @@ def register_socket_handlers(socketio):
             logger.error(f'Error in leave_ride handler: {e}')
             emit('error', {'message': str(e)})
 
+    @socketio.on('update_driver_location')
+    def on_update_driver_location(data):
+        """
+        Handle real-time driver location updates.
+        
+        Expected data: {
+            'ride_id': <int>,
+            'lat': <float>,
+            'lng': <float>,
+            'timestamp': <ISO string>
+        }
+        
+        Security:
+        - Only ride driver can send updates
+        - Ride must be in active status (driver_en_route or in_progress)
+        - Validates ride exists
+        
+        Broadcasts to ride room as 'driver_location_updated' event.
+        Does NOT store in database - real-time only.
+        """
+        try:
+            # Extract payload
+            ride_id = data.get('ride_id')
+            lat = data.get('lat')
+            lng = data.get('lng')
+            timestamp = data.get('timestamp')
+            
+            # Validate required fields
+            if not all([ride_id, lat is not None, lng is not None, timestamp]):
+                logger.warning(f'Invalid location update payload: {data}')
+                emit('error', {
+                    'message': 'Missing required fields: ride_id, lat, lng, timestamp'
+                })
+                return
+            
+            # Get JWT token to identify sender
+            token = request.args.get('token')
+            if not token:
+                logger.warning('Location update without token')
+                emit('error', {'message': 'Authentication required'})
+                return
+            
+            try:
+                decoded = decode_token(token)
+                user_id = int(decoded['sub'])
+            except Exception as e:
+                logger.warning(f'Invalid token for location update: {e}')
+                emit('error', {'message': 'Invalid authentication token'})
+                return
+            
+            # Validate ride exists
+            from app.models import Ride
+            ride = Ride.query.get(ride_id)
+            
+            if not ride:
+                logger.warning(f'Location update for non-existent ride {ride_id}')
+                emit('error', {'message': f'Ride {ride_id} not found'})
+                return
+            
+            # Security: Verify sender is the ride driver
+            if ride.driver_id != user_id:
+                logger.warning(
+                    f'Unauthorized location update: User {user_id} is not driver '
+                    f'of ride {ride_id} (driver is {ride.driver_id})'
+                )
+                emit('error', {
+                    'message': 'Only the ride driver can send location updates'
+                })
+                return
+            
+            # Validate ride status - only allow during active ride
+            valid_statuses = ['driver_en_route', 'in_progress']
+            if ride.status.lower() not in valid_statuses:
+                logger.warning(
+                    f'Location update rejected: Ride {ride_id} status is '
+                    f'{ride.status}, must be driver_en_route or in_progress'
+                )
+                emit('error', {
+                    'message': f'Location updates only allowed during active ride '
+                    f'(current status: {ride.status})'
+                })
+                return
+            
+            # Log the location update
+            logger.info(
+                f'Driver location update: Driver {user_id}, Ride {ride_id}, '
+                f'Coordinates ({lat}, {lng}), Timestamp {timestamp}'
+            )
+            
+            # Broadcast to ride room
+            room = f'ride_{ride_id}'
+            payload = {
+                'ride_id': ride_id,
+                'lat': lat,
+                'lng': lng,
+                'timestamp': timestamp
+            }
+            
+            socketio.emit(
+                'driver_location_updated',
+                payload,
+                room=room
+            )
+            
+            logger.info(
+                f'Broadcasted driver_location_updated to room {room}: '
+                f'({lat}, {lng})'
+            )
+            
+            # Acknowledge to sender
+            emit('location_update_ack', {
+                'ride_id': ride_id,
+                'message': 'Location update broadcasted successfully'
+            })
+            
+        except Exception as e:
+            logger.error(f'Error in update_driver_location handler: {e}')
+            emit('error', {'message': f'Failed to process location update: {str(e)}'})
+
 
 def emit_ride_status_update(socketio, ride_id, new_status, updated_at):
     """
