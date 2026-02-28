@@ -50,8 +50,10 @@ class _RideCardState extends State<RideCard> {
 
   void _startCountdownIfNeeded() {
     final status = widget.ride.status?.toLowerCase() ?? '';
-    if (status == 'scheduled' &&
-        widget.ride.departureTime.isAfter(DateTime.now())) {
+    final isPreLifecycle =
+        status == 'scheduled' || status == 'active' || status == 'full';
+
+    if (isPreLifecycle && widget.ride.departureTime.isAfter(DateTime.now())) {
       _updateCountdown();
       _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) _updateCountdown();
