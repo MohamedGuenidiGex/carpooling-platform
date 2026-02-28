@@ -216,6 +216,8 @@ class _TripCardState extends State<TripCard>
         setState(
           () => currentRide = currentRide.copyWith(status: 'driver_en_route'),
         );
+        // Start GPS location streaming immediately
+        _startLocationStreamingIfNeeded();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Ride started - en route!'),
@@ -247,6 +249,8 @@ class _TripCardState extends State<TripCard>
     if (mounted) {
       if (success) {
         setState(() => currentRide = currentRide.copyWith(status: 'arrived'));
+        // Stop GPS streaming while waiting at pickup
+        _stopLocationStreaming();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Marked as arrived!'),
@@ -442,6 +446,8 @@ class _TripCardState extends State<TripCard>
         setState(
           () => currentRide = currentRide.copyWith(status: 'in_progress'),
         );
+        // Resume GPS location streaming for the journey
+        _startLocationStreamingIfNeeded();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Ride journey begun!'),
@@ -461,6 +467,8 @@ class _TripCardState extends State<TripCard>
 
   Future<void> _completeRide(RideProvider rideProvider) async {
     setState(() => isLoading = true);
+    // Stop GPS streaming before completing
+    _stopLocationStreaming();
     final success = await rideProvider.completeRide(currentRide.id!);
     setState(() => isLoading = false);
 
