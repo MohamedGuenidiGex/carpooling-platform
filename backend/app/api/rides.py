@@ -146,11 +146,8 @@ class RideList(Resource):
     @api.marshal_with(paginated_rides_response)
     def get(self):
         """List all rides with optional filtering, sorting, and pagination"""
-        # Exclude soft-deleted rides and completed/cancelled rides
-        query = Ride.query.filter(
-            (Ride.is_deleted == False) &
-            (Ride.status.notin_(['completed', 'cancelled', 'COMPLETED', 'CANCELLED']))
-        )
+        # Exclude only soft-deleted rides (keep completed/cancelled for history)
+        query = Ride.query.filter(Ride.is_deleted == False)
 
         # Origin/destination filters
         origin = request.args.get('origin')
