@@ -414,6 +414,9 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
             mapController: _mapController,
             currentPosition: _currentPosition,
             showCenterPin: _isSearching,
+            activeRide: _activeRide,
+            isDriver:
+                _activeRide != null && _activeRide!.driverId == _currentUserId,
           ),
 
           // Layer 2: Menu Button (Top Left) - hidden in search mode
@@ -470,25 +473,216 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
 /// Map Background with OpenStreetMap
 ///
 /// Displays an interactive map using flutter_map with OpenStreetMap tiles.
-class _MapBackground extends StatelessWidget {
+/// For passengers, shows animated driver location marker during active rides.
+class _MapBackground extends StatefulWidget {
   final MapController mapController;
   final LatLng? currentPosition;
   final bool showCenterPin;
+  final Ride? activeRide;
+  final bool isDriver;
 
   const _MapBackground({
     required this.mapController,
     this.currentPosition,
     this.showCenterPin = false,
+    this.activeRide,
+    this.isDriver = false,
   });
+
+  @override
+  State<_MapBackground> createState() => _MapBackgroundState();
+}
+
+class _MapBackgroundState extends State<_MapBackground>
+    with SingleTickerProviderStateMixin {
+  final WebSocketService _wsService = WebSocketService();
+  LatLng? _currentDriverPosition;
+  LatLng? _targetDriverPosition;
+  AnimationController? _animController;
+  Animation<double>? _animation;
+  bool _hasInitiallyFramed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupDriverLocationListener();
+  }
+
+  @override
+  void dispose() {
+    _wsService.off('driver_location_updated');
+    _animController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_MapBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Reset state when ride changes or completes
+    if (oldWidget.activeRide?.id != widget.activeRide?.id) {
+      _currentDriverPosition = null;
+      _targetDriverPosition = null;
+      _hasInitiallyFramed = false;
+      _animController?.dispose();
+      _animController = null;
+    }
+
+    // Clear driver marker when ride completes
+    final oldStatus = oldWidget.activeRide?.status?.toLowerCase() ?? '';
+    final newStatus = widget.activeRide?.status?.toLowerCase() ?? '';
+    if ((oldStatus == 'driver_en_route' || oldStatus == 'in_progress') &&
+        (newStatus == 'completed' || newStatus == 'cancelled')) {
+      setState(() {
+        _currentDriverPosition = null;
+        _targetDriverPosition = null;
+      });
+    }
+  }
+
+  void _setupDriverLocationListener() {
+    _wsService.on('driver_location_updated', (data) {
+      if (!mounted) return;
+      if (widget.isDriver) return; // Only passengers track driver
+      if (widget.activeRide == null) return;
+
+      final Map<String, dynamic> locationData = data as Map<String, dynamic>;
+      final int rideId = locationData['ride_id'] as int;
+
+      // Only process if it's for the current active ride
+      if (rideId != widget.activeRide!.id) return;
+
+      // Only process during active ride statuses
+      final status = widget.activeRide!.status?.toLowerCase() ?? '';
+      if (status != 'driver_en_route' && status != 'in_progress') return;
+
+      final double lat = (locationData['lat'] as num).toDouble();
+      final double lng = (locationData['lng'] as num).toDouble();
+      final LatLng newPosition = LatLng(lat, lng);
+
+      debugPrint('RidesScreen: Received driver location: ($lat, $lng)');
+
+      setState(() {
+        _targetDriverPosition = newPosition;
+
+        if (_currentDriverPosition == null) {
+          // First update - set immediately
+          _currentDriverPosition = newPosition;
+
+          // Frame camera to include driver, pickup, and destination
+          if (!_hasInitiallyFramed && widget.activeRide != null) {
+            _frameInitialView();
+            _hasInitiallyFramed = true;
+          }
+        } else {
+          // Animate from current to target
+          _animateMarker();
+        }
+      });
+    });
+  }
+
+  void _animateMarker() {
+    if (_currentDriverPosition == null || _targetDriverPosition == null) return;
+
+    _animController?.dispose();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animController!, curve: Curves.easeInOut),
+    );
+
+    final LatLng startPos = _currentDriverPosition!;
+    final LatLng endPos = _targetDriverPosition!;
+
+    _animController!.addListener(() {
+      if (!mounted) return;
+
+      final double t = _animation!.value;
+      final double lat =
+          startPos.latitude + (endPos.latitude - startPos.latitude) * t;
+      final double lng =
+          startPos.longitude + (endPos.longitude - startPos.longitude) * t;
+
+      setState(() {
+        _currentDriverPosition = LatLng(lat, lng);
+      });
+    });
+
+    _animController!.forward();
+  }
+
+  void _frameInitialView() {
+    if (widget.activeRide == null) return;
+
+    final List<LatLng> points = [];
+
+    // Add driver position
+    if (_currentDriverPosition != null) {
+      points.add(_currentDriverPosition!);
+    }
+
+    // Add pickup location if available
+    if (widget.activeRide!.originLat != null &&
+        widget.activeRide!.originLng != null) {
+      points.add(
+        LatLng(widget.activeRide!.originLat!, widget.activeRide!.originLng!),
+      );
+    }
+
+    // Add destination if available
+    if (widget.activeRide!.destinationLat != null &&
+        widget.activeRide!.destinationLng != null) {
+      points.add(
+        LatLng(
+          widget.activeRide!.destinationLat!,
+          widget.activeRide!.destinationLng!,
+        ),
+      );
+    }
+
+    if (points.isEmpty) return;
+
+    // Calculate bounds
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final point in points) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    // Add padding
+    final double latPadding = (maxLat - minLat) * 0.2;
+    final double lngPadding = (maxLng - minLng) * 0.2;
+
+    final LatLng sw = LatLng(minLat - latPadding, minLng - lngPadding);
+    final LatLng ne = LatLng(maxLat + latPadding, maxLng + lngPadding);
+
+    // Fit bounds
+    widget.mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds(sw, ne),
+        padding: const EdgeInsets.all(50),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     // Use current position if available, otherwise fallback to Sfax coordinates
     final LatLng initialCenter =
-        currentPosition ?? const LatLng(34.7408, 10.7600);
+        widget.currentPosition ?? const LatLng(34.7408, 10.7600);
 
     return FlutterMap(
-      mapController: mapController,
+      mapController: widget.mapController,
       options: MapOptions(
         initialCenter: initialCenter,
         initialZoom: 15.0,
@@ -501,7 +695,7 @@ class _MapBackground extends StatelessWidget {
           userAgentPackageName: 'com.gexpertise.carpool',
         ),
         // Center pin marker when in search mode
-        if (showCenterPin)
+        if (widget.showCenterPin)
           MarkerLayer(
             markers: [
               Marker(
@@ -517,11 +711,11 @@ class _MapBackground extends StatelessWidget {
             ],
           ),
         // Current location marker
-        if (currentPosition != null)
+        if (widget.currentPosition != null)
           MarkerLayer(
             markers: [
               Marker(
-                point: currentPosition!,
+                point: widget.currentPosition!,
                 width: 40,
                 height: 40,
                 child: Container(
@@ -538,6 +732,35 @@ class _MapBackground extends StatelessWidget {
                         shape: BoxShape.circle,
                       ),
                     ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        // Driver location marker (for passengers only)
+        if (!widget.isDriver && _currentDriverPosition != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: _currentDriverPosition!,
+                width: 40,
+                height: 40,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.directions_car,
+                    color: BrandColors.primaryRed,
+                    size: 24,
                   ),
                 ),
               ),
