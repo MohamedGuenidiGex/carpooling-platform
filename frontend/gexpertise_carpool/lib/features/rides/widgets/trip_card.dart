@@ -505,6 +505,29 @@ class _TripCardState extends State<TripCard>
     }
   }
 
+  IconData _getPrimaryButtonIcon() {
+    final status = currentRide.status?.toLowerCase() ?? 'scheduled';
+
+    if (widget.isDriver) {
+      switch (status) {
+        case 'scheduled':
+        case 'active':
+        case 'full':
+          return Icons.directions_car_outlined;
+        case 'driver_en_route':
+          return Icons.location_on_outlined;
+        case 'arrived':
+          return Icons.play_arrow_rounded;
+        case 'in_progress':
+          return Icons.check_circle_outline;
+        default:
+          return Icons.update;
+      }
+    } else {
+      return Icons.info_outline;
+    }
+  }
+
   bool _isDriverAction() {
     final status = currentRide.status?.toLowerCase() ?? 'scheduled';
     return widget.isDriver && status != 'completed' && status != 'cancelled';
@@ -735,12 +758,11 @@ class _TripCardState extends State<TripCard>
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 18),
 
                           // Primary Action Button
                           SizedBox(
                             width: double.infinity,
-                            height: 48,
                             child: ElevatedButton(
                               onPressed: _isDriverAction() && !isLoading
                                   ? () => _handlePrimaryAction(rideProvider)
@@ -751,17 +773,18 @@ class _TripCardState extends State<TripCard>
                                 disabledBackgroundColor: Colors.grey[200],
                                 disabledForegroundColor: Colors.grey[500],
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+                                  vertical: 11,
+                                  horizontal: 16,
                                 ),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 elevation: 0,
                               ),
                               child: isLoading
                                   ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
+                                      height: 18,
+                                      width: 18,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                         valueColor:
@@ -770,12 +793,20 @@ class _TripCardState extends State<TripCard>
                                             ),
                                       ),
                                     )
-                                  : Text(
-                                      _getPrimaryButtonLabel(),
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                  : Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(_getPrimaryButtonIcon(), size: 16),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _getPrimaryButtonLabel(),
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            letterSpacing: 0.2,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                             ),
                           ),
