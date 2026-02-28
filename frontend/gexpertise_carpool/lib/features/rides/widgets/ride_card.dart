@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../models/ride_model.dart';
@@ -8,18 +9,88 @@ import '../models/ride_model.dart';
 /// - Route (Origin -> Destination)
 /// - Date and Time
 /// - Status pill (visual only)
+/// - Live countdown for scheduled rides
 ///
 /// All actions moved to RideTicketSheet via onTap.
-class RideCard extends StatelessWidget {
+class RideCard extends StatefulWidget {
   final Ride ride;
   final VoidCallback? onTap;
 
   const RideCard({super.key, required this.ride, this.onTap});
 
   @override
+  State<RideCard> createState() => _RideCardState();
+}
+
+class _RideCardState extends State<RideCard> {
+  Timer? _countdownTimer;
+  String? _countdownText;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdownIfNeeded();
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(RideCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ride.id != widget.ride.id ||
+        oldWidget.ride.status != widget.ride.status) {
+      _countdownTimer?.cancel();
+      _startCountdownIfNeeded();
+    }
+  }
+
+  void _startCountdownIfNeeded() {
+    final status = widget.ride.status?.toLowerCase() ?? '';
+    if (status == 'scheduled' &&
+        widget.ride.departureTime.isAfter(DateTime.now())) {
+      _updateCountdown();
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) _updateCountdown();
+      });
+    }
+  }
+
+  void _updateCountdown() {
+    final now = DateTime.now();
+    final difference = widget.ride.departureTime.difference(now);
+
+    if (difference.isNegative) {
+      setState(() => _countdownText = null);
+      _countdownTimer?.cancel();
+      return;
+    }
+
+    final hours = difference.inHours;
+    final minutes = difference.inMinutes % 60;
+    final seconds = difference.inSeconds % 60;
+
+    String text;
+    if (hours > 0) {
+      text = 'Starts in ${hours}h ${minutes}m';
+    } else if (minutes > 0) {
+      text = 'Starts in ${minutes}m ${seconds}s';
+    } else if (seconds > 0) {
+      text = 'Starts in ${seconds}s';
+    } else {
+      text = 'Starting now';
+    }
+
+    setState(() => _countdownText = text);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
@@ -74,7 +145,7 @@ class RideCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          ride.origin,
+                          widget.ride.origin,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -85,7 +156,7 @@ class RideCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 28),
                         Text(
-                          ride.destination,
+                          widget.ride.destination,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -108,15 +179,48 @@ class RideCard extends StatelessWidget {
                 children: [
                   _buildInfoItem(
                     icon: Icons.calendar_today_outlined,
-                    label: _formatDate(ride.departureTime),
+                    label: _formatDate(widget.ride.departureTime),
                   ),
                   const SizedBox(width: 24),
                   _buildInfoItem(
                     icon: Icons.access_time_outlined,
-                    label: _formatTime(ride.departureTime),
+                    label: _formatTime(widget.ride.departureTime),
                   ),
                 ],
               ),
+              // Countdown timer for scheduled rides
+              if (_countdownText != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 14,
+                        color: Colors.blue[700],
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _countdownText!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -125,7 +229,7 @@ class RideCard extends StatelessWidget {
   }
 
   Widget _buildStatusPill() {
-    final status = ride.status?.toUpperCase() ?? 'ACTIVE';
+    final status = widget.ride.status?.toUpperCase() ?? 'ACTIVE';
     Color bgColor;
     Color textColor;
     String label;
