@@ -417,6 +417,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
             activeRide: _activeRide,
             isDriver:
                 _activeRide != null && _activeRide!.driverId == _currentUserId,
+            wsService: _wsService,
           ),
 
           // Layer 2: Menu Button (Top Left) - hidden in search mode
@@ -480,6 +481,7 @@ class _MapBackground extends StatefulWidget {
   final bool showCenterPin;
   final Ride? activeRide;
   final bool isDriver;
+  final WebSocketService wsService;
 
   const _MapBackground({
     required this.mapController,
@@ -487,6 +489,7 @@ class _MapBackground extends StatefulWidget {
     this.showCenterPin = false,
     this.activeRide,
     this.isDriver = false,
+    required this.wsService,
   });
 
   @override
@@ -495,7 +498,6 @@ class _MapBackground extends StatefulWidget {
 
 class _MapBackgroundState extends State<_MapBackground>
     with SingleTickerProviderStateMixin {
-  final WebSocketService _wsService = WebSocketService();
   LatLng? _currentDriverPosition;
   LatLng? _targetDriverPosition;
   AnimationController? _animController;
@@ -510,7 +512,7 @@ class _MapBackgroundState extends State<_MapBackground>
 
   @override
   void dispose() {
-    _wsService.off('driver_location_updated');
+    widget.wsService.off('driver_location_updated');
     _animController?.dispose();
     super.dispose();
   }
@@ -541,7 +543,11 @@ class _MapBackgroundState extends State<_MapBackground>
   }
 
   void _setupDriverLocationListener() {
-    _wsService.on('driver_location_updated', (data) {
+    debugPrint(
+      'RidesScreen: Setting up driver location listener, isDriver=${widget.isDriver}',
+    );
+    widget.wsService.on('driver_location_updated', (data) {
+      debugPrint('RidesScreen: driver_location_updated event received: $data');
       if (!mounted) return;
       if (widget.isDriver) return; // Only passengers track driver
       if (widget.activeRide == null) return;
@@ -560,7 +566,9 @@ class _MapBackgroundState extends State<_MapBackground>
       final double lng = (locationData['lng'] as num).toDouble();
       final LatLng newPosition = LatLng(lat, lng);
 
-      debugPrint('RidesScreen: Received driver location: ($lat, $lng)');
+      debugPrint(
+        'RidesScreen: Processing driver location for ride $rideId: ($lat, $lng)',
+      );
 
       setState(() {
         _targetDriverPosition = newPosition;
