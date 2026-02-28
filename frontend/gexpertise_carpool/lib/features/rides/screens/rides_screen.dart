@@ -803,6 +803,16 @@ class _SearchBar extends StatelessWidget {
                 ),
               );
             },
+            decorationBuilder: (context, child) {
+              return Material(
+                type: MaterialType.card,
+                elevation: 4,
+                borderRadius: BorderRadius.circular(24),
+                color: Colors.white,
+                clipBehavior: Clip.antiAlias,
+                child: child,
+              );
+            },
             onSelected: (suggestion) {
               onLocationSelected(suggestion);
             },
