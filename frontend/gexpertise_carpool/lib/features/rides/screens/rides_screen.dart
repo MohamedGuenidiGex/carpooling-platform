@@ -48,6 +48,8 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
 
   // Active ride detection state
   Ride? _activeRide;
+  int?
+  _activeReservationId; // Passenger's reservation ID for boarding confirmation
   bool _sheetVisible = false;
   int? _currentUserId;
   final WebSocketService _wsService = WebSocketService();
@@ -115,7 +117,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   static const _activeStatuses = {'driver_en_route', 'arrived', 'in_progress'};
 
   /// Terminal statuses that should never show the sheet
-  static const _terminalStatuses = {'completed', 'cancelled'};
+  static const _terminalStatuses = {'completed', 'cancelled', 'missed'};
 
   /// Check if a ride qualifies for the trip bottom sheet
   bool _isEligibleForSheet(Ride ride) {
@@ -180,10 +182,15 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
         'RidesScreen: Confirmed reservations found: ${confirmedReservations.length}',
       );
 
+      // Map ride IDs to reservation IDs for boarding confirmation
+      final Map<int, int> rideToReservation = {};
       for (final reservation in confirmedReservations) {
         final ride = reservation.ride;
         if (ride != null && isRideStatusActive(ride.status)) {
           candidateRides.add(ride);
+          if (ride.id != null && reservation.id != null) {
+            rideToReservation[ride.id!] = reservation.id!;
+          }
         }
       }
 
@@ -205,7 +212,12 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
         );
         _wsService.joinRide(selected.id!);
         final wasNull = _activeRide == null;
-        setState(() => _activeRide = selected);
+        setState(() {
+          _activeRide = selected;
+          _activeReservationId = selected.id != null
+              ? rideToReservation[selected.id!]
+              : null;
+        });
         // Trigger slide-up after frame if this is a new appearance
         if (wasNull) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -462,6 +474,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
                   currentUserId: _currentUserId!,
                   isDriver: _activeRide!.driverId == _currentUserId,
                   onRideCompleted: _handleRideCompleted,
+                  reservationId: _activeReservationId,
                 ),
               ),
             ),

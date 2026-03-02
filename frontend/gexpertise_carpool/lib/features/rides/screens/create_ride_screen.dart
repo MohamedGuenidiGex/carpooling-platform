@@ -171,6 +171,24 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
       return;
     }
 
+    // Part 4: Validate departure time is in the future
+    final departureDateTime = DateTime(
+      _selectedDate!.year,
+      _selectedDate!.month,
+      _selectedDate!.day,
+      _selectedTime!.hour,
+      _selectedTime!.minute,
+    );
+    if (departureDateTime.isBefore(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Departure time must be in the future'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     // Create ride data with GPS coordinates if available
     final rideData = {
       'origin': _originController.text.trim(),

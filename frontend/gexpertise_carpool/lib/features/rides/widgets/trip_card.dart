@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
+import 'package:gexpertise_carpool/features/reservations/providers/reservation_provider.dart';
 import 'package:gexpertise_carpool/core/theme/brand_colors.dart';
 import 'package:gexpertise_carpool/core/services/websocket_service.dart';
 
@@ -13,12 +14,15 @@ class TripCard extends StatefulWidget {
   final int currentUserId;
   final bool isDriver;
   final VoidCallback onRideCompleted;
+  final int?
+  reservationId; // Passenger's reservation ID for boarding confirmation
 
   const TripCard({
     required this.activeRide,
     required this.currentUserId,
     required this.isDriver,
     required this.onRideCompleted,
+    this.reservationId,
     Key? key,
   }) : super(key: key);
 
@@ -568,6 +572,44 @@ class _TripCardState extends State<TripCard>
         status != 'missed';
   }
 
+  /// Check if passenger needs to confirm boarding (ride is arrived + has reservation)
+  bool _isPassengerBoardingAction() {
+    final status = currentRide.status?.toLowerCase() ?? 'scheduled';
+    return !widget.isDriver &&
+        status == 'arrived' &&
+        widget.reservationId != null;
+  }
+
+  /// Confirm passenger boarding
+  Future<void> _confirmBoarding() async {
+    if (widget.reservationId == null) return;
+
+    setState(() => isLoading = true);
+    final provider = context.read<ReservationProvider>();
+    final success = await provider.confirmBoarding(widget.reservationId!);
+    setState(() => isLoading = false);
+
+    if (mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Boarding confirmed! You\'re on the ride.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              provider.errorMessage ?? 'Failed to confirm boarding',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // Shorten long addresses to first meaningful part
   String _shortAddress(String addr) {
     final parts = addr.split(',');
@@ -913,56 +955,112 @@ class _TripCardState extends State<TripCard>
                           ),
                           const SizedBox(height: 18),
 
-                          // Primary Action Button
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _isDriverAction() && !isLoading
-                                  ? () => _handlePrimaryAction(rideProvider)
-                                  : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: BrandColors.primaryRed,
-                                foregroundColor: Colors.white,
-                                disabledBackgroundColor: Colors.grey[200],
-                                disabledForegroundColor: Colors.grey[500],
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 11,
-                                  horizontal: 16,
+                          // Primary Action Button (Driver actions)
+                          if (_isDriverAction())
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: !isLoading
+                                    ? () => _handlePrimaryAction(rideProvider)
+                                    : null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: BrandColors.primaryRed,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.grey[200],
+                                  disabledForegroundColor: Colors.grey[500],
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 11,
+                                    horizontal: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 0,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 0,
-                              ),
-                              child: isLoading
-                                  ? const SizedBox(
-                                      height: 18,
-                                      width: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
-                                      ),
-                                    )
-                                  : Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(_getPrimaryButtonIcon(), size: 16),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          _getPrimaryButtonLabel(),
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            letterSpacing: 0.2,
-                                          ),
+                                child: isLoading
+                                    ? const SizedBox(
+                                        height: 18,
+                                        width: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
                                         ),
-                                      ],
-                                    ),
+                                      )
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _getPrimaryButtonIcon(),
+                                            size: 16,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            _getPrimaryButtonLabel(),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
                             ),
-                          ),
+
+                          // Passenger Boarding Confirmation Button
+                          if (_isPassengerBoardingAction())
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: !isLoading
+                                    ? () => _confirmBoarding()
+                                    : null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green[600],
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.grey[200],
+                                  disabledForegroundColor: Colors.grey[500],
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 11,
+                                    horizontal: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: isLoading
+                                    ? const SizedBox(
+                                        height: 18,
+                                        width: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                    : const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.check_circle, size: 16),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Confirm Boarding',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ),
                         ],
                       ),
                     ),

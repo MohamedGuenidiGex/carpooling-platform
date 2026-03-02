@@ -8,6 +8,7 @@ from app.extensions import db, socketio
 from app.models import Reservation, Ride, Employee, Notification
 from app.utils.logger import log_action
 from app.realtime_events import emit_ride_status_update
+from app.services.boarding_service import confirm_boarding, check_and_expire_boarding_deadlines
 
 api = Namespace('reservations', description='Reservation operations')
 
@@ -108,6 +109,8 @@ class ReservationList(Resource):
                     'ride_id': reservation.ride_id,
                     'seats_reserved': reservation.seats_reserved,
                     'status': reservation.status,
+                    'boarding_deadline': reservation.boarding_deadline.isoformat() if reservation.boarding_deadline else None,
+                    'boarded': reservation.boarded,
                     'created_at': reservation.created_at.isoformat() if reservation.created_at else None,
                     'ride': {
                         'id': ride.id,
@@ -183,6 +186,11 @@ class ReservationList(Resource):
             if ride.driver_id == employee_id:
                 api.abort(400, 'You cannot book a seat on your own ride')
 
+            # Part 2: Freeze reservation intake - only allow bookings for scheduled rides
+            ride_status_lower = (ride.status or 'scheduled').lower()
+            if ride_status_lower not in ['scheduled', 'active', 'full']:
+                api.abort(400, f'Cannot book ride - ride is already {ride_status_lower}. Reservations are only accepted before the driver departs.')
+
             # Check duplicate active reservation (PENDING or CONFIRMED)
             existing_reservation = Reservation.query.filter_by(
                 employee_id=employee_id,
@@ -191,6 +199,16 @@ class ReservationList(Resource):
             
             if existing_reservation:
                 api.abort(400, 'You already have an active reservation for this ride')
+
+            # No re-request rule: MISSED reservations are terminal
+            missed_reservation = Reservation.query.filter_by(
+                employee_id=employee_id,
+                ride_id=ride_id,
+                status='MISSED'
+            ).first()
+            
+            if missed_reservation:
+                api.abort(400, 'You missed boarding for this ride. Cannot re-request.')
 
             # Validate ride status
             if ride.status == 'COMPLETED':
@@ -268,10 +286,10 @@ class ClearCompletedReservations(Resource):
                 ride = Ride.query.get(reservation.ride_id)
                 ride_status = (ride.status or 'scheduled').lower() if ride else 'unknown'
                 
-                # Delete if cancelled/rejected or from completed/cancelled ride
+                # Delete if cancelled/rejected/missed or from completed/cancelled/missed ride
                 can_delete = (
-                    reservation_status in ['CANCELLED', 'REJECTED'] or
-                    ride_status in ['completed', 'cancelled']
+                    reservation_status in ['CANCELLED', 'REJECTED', 'MISSED'] or
+                    ride_status in ['completed', 'cancelled', 'missed']
                 )
                 
                 if can_delete:
@@ -564,11 +582,11 @@ class ReservationDetail(Resource):
         ride_status = (ride.status or 'scheduled').lower() if ride else 'unknown'
         
         # Allow deletion if:
-        # 1. Reservation is cancelled or rejected, OR
-        # 2. Ride is completed or cancelled
+        # 1. Reservation is cancelled, rejected, or missed, OR
+        # 2. Ride is completed, cancelled, or missed
         can_delete = (
-            reservation_status in ['CANCELLED', 'REJECTED'] or
-            ride_status in ['completed', 'cancelled']
+            reservation_status in ['CANCELLED', 'REJECTED', 'MISSED'] or
+            ride_status in ['completed', 'cancelled', 'missed']
         )
         
         if not can_delete:
@@ -585,3 +603,39 @@ class ReservationDetail(Resource):
         )
         
         return {'message': 'Reservation deleted successfully'}, 200
+
+
+@api.route('/<int:id>/confirm-boarding')
+@api.param('id', 'Reservation ID')
+class ReservationConfirmBoarding(Resource):
+    @jwt_required()
+    @api.doc('confirm_boarding', security='Bearer',
+        description='Confirm passenger boarding after driver has arrived. Must be called within the boarding deadline (5 minutes after arrival).',
+        responses={
+            200: 'Boarding confirmed successfully',
+            400: 'Boarding deadline passed or invalid status',
+            401: 'Unauthorized - JWT required',
+            403: 'Forbidden - not your reservation',
+            404: 'Reservation not found',
+            500: 'Internal server error'
+        }
+    )
+    def post(self, id):
+        """Confirm passenger boarding within the boarding deadline"""
+        employee_id = int(get_jwt_identity())
+        
+        try:
+            success, message = confirm_boarding(id, employee_id)
+            
+            if success:
+                log_action(
+                    action='BOARDING_CONFIRMED',
+                    employee_id=employee_id,
+                    details={'reservation_id': id}
+                )
+                return {'message': message, 'reservation_id': id, 'boarded': True}, 200
+            else:
+                return {'error': 'BOARDING_FAILED', 'message': message}, 400
+                
+        except Exception as e:
+            return {'error': 'INTERNAL_ERROR', 'message': str(e)}, 500

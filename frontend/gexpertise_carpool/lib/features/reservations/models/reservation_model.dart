@@ -8,7 +8,9 @@ class Reservation {
   final int? employeeId;
   final int? rideId;
   final int? seatsReserved;
-  final String? status; // PENDING, CONFIRMED, CANCELLED, REJECTED
+  final String? status; // PENDING, CONFIRMED, CANCELLED, REJECTED, MISSED
+  final DateTime? boardingDeadline; // Set when ride arrives (5 min to confirm)
+  final bool boarded; // True when passenger confirms boarding
   final DateTime? createdAt;
   final String? passengerName; // From backend join with Employee table
   final String? passengerEmail; // From backend join with Employee table
@@ -20,6 +22,8 @@ class Reservation {
     this.rideId,
     this.seatsReserved,
     this.status,
+    this.boardingDeadline,
+    this.boarded = false,
     this.createdAt,
     this.passengerName,
     this.passengerEmail,
@@ -37,6 +41,10 @@ class Reservation {
           ? json['seats_reserved'] as int
           : null,
       status: json['status'] as String?,
+      boardingDeadline: json['boarding_deadline'] is String
+          ? DateTime.parse(json['boarding_deadline'] as String)
+          : null,
+      boarded: json['boarded'] == true,
       createdAt: json['created_at'] is String
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -72,6 +80,18 @@ class Reservation {
   /// Check if reservation is rejected
   bool get isRejected => status == 'REJECTED';
 
+  /// Check if reservation is missed (boarding deadline expired)
+  bool get isMissed => status == 'MISSED';
+
+  /// Check if boarding confirmation is needed
+  bool get needsBoardingConfirmation =>
+      isConfirmed && !boarded && boardingDeadline != null;
+
+  /// Check if boarding deadline has passed
+  bool get isBoardingExpired =>
+      boardingDeadline != null &&
+      DateTime.now().toUtc().isAfter(boardingDeadline!);
+
   /// Get display-friendly status text
   String get displayStatus {
     switch (status?.toUpperCase()) {
@@ -83,6 +103,8 @@ class Reservation {
         return 'Cancelled';
       case 'REJECTED':
         return 'Rejected';
+      case 'MISSED':
+        return 'Missed';
       default:
         return status ?? 'Unknown';
     }

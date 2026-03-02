@@ -162,6 +162,20 @@ class ReservationRepository {
     }
   }
 
+  /// Confirm passenger boarding
+  ///
+  /// POST /reservations/{id}/confirm-boarding
+  /// Must be called within 5-minute boarding deadline after driver arrives
+  Future<void> confirmBoarding(int reservationId) async {
+    try {
+      await ApiClient.post('/reservations/$reservationId/confirm-boarding');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ReservationRepositoryException('Failed to confirm boarding: $e');
+    }
+  }
+
   /// Delete a completed reservation
   ///
   /// DELETE /reservations/{id}

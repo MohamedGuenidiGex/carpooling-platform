@@ -74,6 +74,8 @@ def serialize_ride_with_reservations(ride):
         Reservation.employee_id,
         Reservation.seats_reserved,
         Reservation.status,
+        Reservation.boarding_deadline,
+        Reservation.boarded,
         Reservation.created_at,
         Employee.name,
         Employee.email
@@ -82,11 +84,6 @@ def serialize_ride_with_reservations(ride):
     ).filter(
         Reservation.ride_id == ride.id
     ).all()
-    
-    # DEBUG: Log what we found
-    print(f"DEBUG: Ride {ride.id} has {len(reservations)} reservations")
-    for r in reservations:
-        print(f"  - Reservation {r.id}: employee={r.employee_id}, status={r.status}, seats={r.seats_reserved}")
     
     # Get driver name
     driver = Employee.query.get(ride.driver_id)
@@ -112,6 +109,8 @@ def serialize_ride_with_reservations(ride):
                 'employee_id': r.employee_id,
                 'seats_reserved': r.seats_reserved,
                 'status': r.status,
+                'boarding_deadline': r.boarding_deadline.isoformat() if r.boarding_deadline else None,
+                'boarded': r.boarded,
                 'created_at': r.created_at.isoformat() if r.created_at else None,
                 'passenger_name': r.name,
                 'passenger_email': r.email
@@ -148,9 +147,10 @@ class RideList(Resource):
     @api.marshal_with(paginated_rides_response)
     def get(self):
         """List all rides with optional filtering, sorting, and pagination"""
-        # Lazy expiration check - mark expired rides as missed
+        # Lazy expiration checks
         try:
             check_and_expire_rides()
+            check_and_expire_boarding_deadlines()
         except Exception as e:
             # Log but don't fail the request
             import logging
@@ -284,14 +284,10 @@ class RideList(Resource):
         if not driver:
             api.abort(404, 'Driver not found')
         
-        # Debug: Log received coordinate data
-        print(f"DEBUG: Ride creation request data:")
-        print(f"  Origin: {data.get('origin')}")
-        print(f"  origin_lat: {data.get('origin_lat')} (type: {type(data.get('origin_lat'))})")
-        print(f"  origin_lng: {data.get('origin_lng')} (type: {type(data.get('origin_lng'))})")
-        print(f"  Destination: {data.get('destination')}")
-        print(f"  destination_lat: {data.get('destination_lat')} (type: {type(data.get('destination_lat'))})")
-        print(f"  destination_lng: {data.get('destination_lng')} (type: {type(data.get('destination_lng'))})")
+        # Part 4: Validate departure_time is in the future
+        departure_time = datetime.fromisoformat(data['departure_time'])
+        if departure_time <= datetime.utcnow():
+            api.abort(400, 'Departure time must be in the future. Cannot create rides with past departure times.')
         
         ride = Ride(
             driver_id=driver_id,
@@ -301,18 +297,11 @@ class RideList(Resource):
             origin_lng=data.get('origin_lng'),
             destination_lat=data.get('destination_lat'),
             destination_lng=data.get('destination_lng'),
-            departure_time=datetime.fromisoformat(data['departure_time']),
+            departure_time=departure_time,
             available_seats=data['available_seats']
         )
         db.session.add(ride)
         db.session.commit()
-        
-        # Debug: Verify what was saved to database
-        print(f"DEBUG: After commit, ride object has:")
-        print(f"  ride.origin_lat: {ride.origin_lat}")
-        print(f"  ride.origin_lng: {ride.origin_lng}")
-        print(f"  ride.destination_lat: {ride.destination_lat}")
-        print(f"  ride.destination_lng: {ride.destination_lng}")
 
         # Log ride creation
         log_action(
@@ -365,9 +354,9 @@ class RideDetail(Resource):
             if ride.driver_id != employee_id:
                 api.abort(403, 'Only the ride driver can delete the ride')
             
-            # Only allow deletion of completed or cancelled rides
-            if ride.status not in ['completed', 'cancelled', 'COMPLETED', 'CANCELLED']:
-                api.abort(400, f'Cannot delete ride with status {ride.status}. Only completed or cancelled rides can be deleted.')
+            # Only allow deletion of terminal state rides (completed, cancelled, missed)
+            if ride.status not in ['completed', 'cancelled', 'missed', 'COMPLETED', 'CANCELLED']:
+                api.abort(400, f'Cannot delete ride with status {ride.status}. Only completed, cancelled, or missed rides can be deleted.')
             
             # Soft delete - mark as deleted instead of removing from database
             ride.is_deleted = True
@@ -582,6 +571,10 @@ class RideBegin(Resource):
             
             if not ride.can_transition_to('in_progress'):
                 api.abort(400, f'Cannot transition from {ride.status} to in_progress')
+            
+            # Expire any boarding deadlines before beginning the ride
+            # This ensures passengers who didn't confirm are marked MISSED
+            check_and_expire_boarding_deadlines()
             
             ride.status = 'in_progress'
             db.session.commit()

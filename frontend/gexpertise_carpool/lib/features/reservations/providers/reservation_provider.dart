@@ -176,6 +176,29 @@ class ReservationProvider extends ChangeNotifier {
     }
   }
 
+  /// Confirm passenger boarding
+  ///
+  /// Confirms boarding within the 5-minute deadline after driver arrives.
+  /// Returns true on success, false on failure.
+  Future<bool> confirmBoarding(int reservationId) async {
+    _setUpdatingReservation(true);
+    _clearError();
+
+    try {
+      await _reservationRepository.confirmBoarding(reservationId);
+      _setUpdatingReservation(false);
+      return true;
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setUpdatingReservation(false);
+      return false;
+    } catch (e) {
+      _setError('Failed to confirm boarding: $e');
+      _setUpdatingReservation(false);
+      return false;
+    }
+  }
+
   /// Delete a completed reservation
   ///
   /// Deletes a cancelled/rejected reservation or one from a completed/cancelled ride.
@@ -219,8 +242,10 @@ class ReservationProvider extends ChangeNotifier {
         final rideStatus = (r.ride?.status ?? 'scheduled').toLowerCase();
         return status == 'CANCELLED' ||
             status == 'REJECTED' ||
+            status == 'MISSED' ||
             rideStatus == 'completed' ||
-            rideStatus == 'cancelled';
+            rideStatus == 'cancelled' ||
+            rideStatus == 'missed';
       });
 
       _setUpdatingReservation(false);
