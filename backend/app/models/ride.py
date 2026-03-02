@@ -33,6 +33,7 @@ class Ride(db.Model):
         'in_progress',
         'completed',
         'cancelled',
+        'missed',  # System-controlled terminal status for expired rides
         # Legacy statuses for backward compatibility
         'ACTIVE',
         'FULL'
@@ -40,14 +41,15 @@ class Ride(db.Model):
 
     # State transition rules
     VALID_TRANSITIONS = {
-        'scheduled': ['driver_en_route', 'cancelled'],
-        'ACTIVE': ['driver_en_route', 'cancelled'],  # Legacy support
-        'FULL': ['driver_en_route', 'cancelled'],    # Legacy support
+        'scheduled': ['driver_en_route', 'cancelled', 'missed'],  # missed only via system
+        'ACTIVE': ['driver_en_route', 'cancelled', 'missed'],  # Legacy support
+        'FULL': ['driver_en_route', 'cancelled', 'missed'],    # Legacy support
         'driver_en_route': ['arrived', 'cancelled'],
         'arrived': ['in_progress', 'cancelled'],
         'in_progress': ['completed', 'cancelled'],
         'completed': [],  # Terminal state
-        'cancelled': []   # Terminal state
+        'cancelled': [],  # Terminal state
+        'missed': []      # Terminal state - system-controlled only
     }
 
     def can_transition_to(self, new_status):

@@ -8,6 +8,7 @@ from app.extensions import db, socketio
 from app.models import Ride, Employee, Reservation, Notification
 from app.utils.logger import log_action
 from app.realtime_events import emit_ride_status_update
+from app.services.ride_expiration_service import check_and_expire_rides
 
 api = Namespace('rides', description='Ride operations')
 
@@ -146,7 +147,15 @@ class RideList(Resource):
     @api.marshal_with(paginated_rides_response)
     def get(self):
         """List all rides with optional filtering, sorting, and pagination"""
-        # Exclude only soft-deleted rides (keep completed/cancelled for history)
+        # Lazy expiration check - mark expired rides as missed
+        try:
+            check_and_expire_rides()
+        except Exception as e:
+            # Log but don't fail the request
+            import logging
+            logging.getLogger(__name__).error(f'Expiration check failed: {e}')
+        
+        # Exclude only soft-deleted rides (keep completed/cancelled/missed for history)
         query = Ride.query.filter(Ride.is_deleted == False)
 
         # Origin/destination filters
