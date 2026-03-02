@@ -8,6 +8,7 @@ import logging
 from app.extensions import db, socketio
 from app.models import Ride, Employee, Reservation, Notification
 from app.utils.logger import log_action
+from app.utils.geo import matches_ride_location, PICKUP_RADIUS_KM, DESTINATION_RADIUS_KM
 from app.realtime_events import emit_ride_status_update
 from app.services.ride_expiration_service import check_and_expire_rides
 from app.services.boarding_service import set_boarding_deadlines, check_and_expire_boarding_deadlines
@@ -132,8 +133,12 @@ class RideList(Resource):
     @jwt_required()
     @api.doc('list_rides', security='Bearer', 
         params={
-            'origin': {'description': 'Filter by origin (partial match, case-insensitive)', 'type': 'string', 'required': False},
-            'destination': {'description': 'Filter by destination (partial match, case-insensitive)', 'type': 'string', 'required': False},
+            'origin_lat': {'description': 'Search origin latitude (coordinate-based matching)', 'type': 'number', 'required': False},
+            'origin_lng': {'description': 'Search origin longitude (coordinate-based matching)', 'type': 'number', 'required': False},
+            'destination_lat': {'description': 'Search destination latitude (coordinate-based matching)', 'type': 'number', 'required': False},
+            'destination_lng': {'description': 'Search destination longitude (coordinate-based matching)', 'type': 'number', 'required': False},
+            'pickup_radius_km': {'description': f'Pickup radius in km (default: {PICKUP_RADIUS_KM})', 'type': 'number', 'required': False},
+            'destination_radius_km': {'description': f'Destination radius in km (default: {DESTINATION_RADIUS_KM})', 'type': 'number', 'required': False},
             'date_from': {'description': 'Filter rides from this date (ISO datetime)', 'type': 'string', 'required': False},
             'date_to': {'description': 'Filter rides up to this date (ISO datetime)', 'type': 'string', 'required': False},
             'driver_id': {'description': 'Filter by driver ID (for getting my offered rides)', 'type': 'integer', 'required': False},
@@ -162,15 +167,36 @@ class RideList(Resource):
         # Exclude only soft-deleted rides (keep completed/cancelled/missed for history)
         query = Ride.query.filter(Ride.is_deleted == False)
 
-        # Origin/destination filters
-        origin = request.args.get('origin')
-        destination = request.args.get('destination')
-
-        if origin:
-            query = query.filter(Ride.origin.ilike(f'%{origin}%'))
-
-        if destination:
-            query = query.filter(Ride.destination.ilike(f'%{destination}%'))
+        # Coordinate-based location filters (replaces string-based matching)
+        origin_lat = request.args.get('origin_lat', type=float)
+        origin_lng = request.args.get('origin_lng', type=float)
+        destination_lat = request.args.get('destination_lat', type=float)
+        destination_lng = request.args.get('destination_lng', type=float)
+        
+        # Optional custom radii (use defaults if not provided)
+        pickup_radius = request.args.get('pickup_radius_km', type=float, default=PICKUP_RADIUS_KM)
+        destination_radius = request.args.get('destination_radius_km', type=float, default=DESTINATION_RADIUS_KM)
+        
+        # Validate coordinate parameters
+        has_origin_coords = origin_lat is not None and origin_lng is not None
+        has_dest_coords = destination_lat is not None and destination_lng is not None
+        
+        if has_origin_coords and not has_dest_coords:
+            api.abort(400, 'Both destination_lat and destination_lng are required when origin coordinates are provided')
+        if has_dest_coords and not has_origin_coords:
+            api.abort(400, 'Both origin_lat and origin_lng are required when destination coordinates are provided')
+        
+        # Store coordinate search params for post-query filtering
+        coordinate_search = None
+        if has_origin_coords and has_dest_coords:
+            coordinate_search = {
+                'origin_lat': origin_lat,
+                'origin_lng': origin_lng,
+                'destination_lat': destination_lat,
+                'destination_lng': destination_lng,
+                'pickup_radius_km': pickup_radius,
+                'destination_radius_km': destination_radius
+            }
 
         # Driver filter (for getting my offered rides)
         driver_id = request.args.get('driver_id')
@@ -233,21 +259,69 @@ class RideList(Resource):
         else:
             query = query.order_by(Ride.departure_time.asc())
 
-        # Pagination parameters
-        try:
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 10))
-        except ValueError:
-            api.abort(400, 'page and per_page must be integers')
+        # Apply coordinate-based filtering BEFORE pagination
+        # This ensures accurate pagination counts
+        if coordinate_search:
+            all_rides = query.all()
+            filtered_rides = []
+            
+            for ride in all_rides:
+                if matches_ride_location(
+                    coordinate_search['origin_lat'],
+                    coordinate_search['origin_lng'],
+                    coordinate_search['destination_lat'],
+                    coordinate_search['destination_lng'],
+                    ride.origin_lat,
+                    ride.origin_lng,
+                    ride.destination_lat,
+                    ride.destination_lng,
+                    coordinate_search['pickup_radius_km'],
+                    coordinate_search['destination_radius_km']
+                ):
+                    filtered_rides.append(ride)
+            
+            # Manual pagination on filtered results
+            try:
+                page = int(request.args.get('page', 1))
+                per_page = int(request.args.get('per_page', 10))
+            except ValueError:
+                api.abort(400, 'page and per_page must be integers')
+            
+            if page < 1:
+                api.abort(400, 'page must be >= 1')
+            if per_page < 1 or per_page > 50:
+                api.abort(400, 'per_page must be between 1 and 50')
+            
+            total_items = len(filtered_rides)
+            total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_items = filtered_rides[start_idx:end_idx]
+            
+            # Create pagination-like object
+            class ManualPagination:
+                def __init__(self, items, page, per_page, total):
+                    self.items = items
+                    self.page = page
+                    self.per_page = per_page
+                    self.total = total
+                    self.pages = (total + per_page - 1) // per_page if total > 0 else 1
+            
+            pagination = ManualPagination(page_items, page, per_page, total_items)
+        else:
+            # No coordinate filtering - use standard pagination
+            try:
+                page = int(request.args.get('page', 1))
+                per_page = int(request.args.get('per_page', 10))
+            except ValueError:
+                api.abort(400, 'page and per_page must be integers')
 
-        # Validate pagination
-        if page < 1:
-            api.abort(400, 'page must be >= 1')
-        if per_page < 1 or per_page > 50:
-            api.abort(400, 'per_page must be between 1 and 50')
+            if page < 1:
+                api.abort(400, 'page must be >= 1')
+            if per_page < 1 or per_page > 50:
+                api.abort(400, 'per_page must be between 1 and 50')
 
-        # Execute paginated query
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+            pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         
         serialized_items = serialize_rides_list(pagination.items)
         
