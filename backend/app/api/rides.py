@@ -9,6 +9,7 @@ from app.models import Ride, Employee, Reservation, Notification
 from app.utils.logger import log_action
 from app.realtime_events import emit_ride_status_update
 from app.services.ride_expiration_service import check_and_expire_rides
+from app.services.boarding_service import set_boarding_deadlines, check_and_expire_boarding_deadlines
 
 api = Namespace('rides', description='Ride operations')
 
@@ -527,6 +528,9 @@ class RideArrive(Resource):
             
             ride.status = 'arrived'
             db.session.commit()
+            
+            # Set boarding deadlines for all confirmed passengers
+            set_boarding_deadlines(ride.id)
             
             log_action(
                 action='RIDE_DRIVER_ARRIVED',

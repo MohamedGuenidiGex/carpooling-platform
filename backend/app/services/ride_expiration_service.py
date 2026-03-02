@@ -34,7 +34,11 @@ def check_and_expire_rides():
             Ride.departure_time < now  # Only past departure time
         ).all()
         
+        logger.info(f'Expiration check: Found {len(scheduled_rides)} scheduled rides past departure time')
+        logger.info(f'Current UTC time: {now}')
+        
         for ride in scheduled_rides:
+            logger.info(f'Checking ride {ride.id}: status={ride.status}, departure={ride.departure_time}')
             time_since_departure = now - ride.departure_time
             
             # Check for expiration (30 minutes past departure)
