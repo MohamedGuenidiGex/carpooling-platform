@@ -40,6 +40,7 @@ class _TripCardState extends State<TripCard>
   bool _hasConfirmedBoarding = false; // Track if passenger confirmed boarding
   late AnimationController _animController;
   late Animation<double> _expandAnimation;
+  Timer? _boardingDeadlineTimer; // Auto-dismiss after boarding deadline
 
   // GPS location streaming
   StreamSubscription<Position>? _locationStreamSubscription;
@@ -73,10 +74,14 @@ class _TripCardState extends State<TripCard>
     if (widget.isDriver) {
       _startLocationStreamingIfNeeded();
     }
+
+    // Start boarding deadline timer for passengers
+    _setupBoardingDeadlineTimer();
   }
 
   @override
   void dispose() {
+    _boardingDeadlineTimer?.cancel();
     _stopLocationStreaming();
     _animController.dispose();
     super.dispose();
@@ -115,6 +120,11 @@ class _TripCardState extends State<TripCard>
       if (widget.isDriver) {
         _startLocationStreamingIfNeeded();
       }
+    }
+
+    // Re-setup boarding deadline timer if deadline changed
+    if (oldWidget.boardingDeadline != widget.boardingDeadline) {
+      _setupBoardingDeadlineTimer();
     }
   }
 
@@ -573,6 +583,45 @@ class _TripCardState extends State<TripCard>
         status != 'completed' &&
         status != 'cancelled' &&
         status != 'missed';
+  }
+
+  /// Schedule auto-dismiss of TripCard when boarding deadline expires (passenger only)
+  void _setupBoardingDeadlineTimer() {
+    // Only for passengers with a boarding deadline who haven't confirmed
+    if (widget.isDriver ||
+        widget.boardingDeadline == null ||
+        _hasConfirmedBoarding) {
+      return;
+    }
+
+    final now = DateTime.now().toUtc();
+    final deadline = widget.boardingDeadline!.toUtc();
+    final remaining = deadline.difference(now);
+
+    if (remaining.isNegative) {
+      // Deadline already passed — trigger refresh immediately
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onRideCompleted();
+      });
+      return;
+    }
+
+    // Schedule dismissal when deadline expires
+    _boardingDeadlineTimer?.cancel();
+    _boardingDeadlineTimer = Timer(remaining, () {
+      if (mounted && !_hasConfirmedBoarding) {
+        // Deadline just expired — trigger card removal
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Boarding deadline expired. Your reservation has been marked as missed.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        widget.onRideCompleted();
+      }
+    });
   }
 
   /// Check if passenger needs to confirm boarding

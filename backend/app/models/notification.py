@@ -7,7 +7,7 @@ class Notification(db.Model):
     employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False)
     ride_id = db.Column(db.Integer, db.ForeignKey('rides.id'), nullable=True)
     message = db.Column(db.Text, nullable=False)
-    type = db.Column(db.String(20), default='info')  # 'request', 'approval', 'rejection', 'cancellation', 'info'
+    type = db.Column(db.String(50), default='info')  # 'request', 'approval', 'rejection', 'cancellation', 'info', 'boarding_deadline', 'boarding_missed', 'passenger_missed_boarding', 'passenger_boarded'
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 
