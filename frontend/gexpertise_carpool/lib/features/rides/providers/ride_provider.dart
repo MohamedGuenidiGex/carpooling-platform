@@ -138,6 +138,7 @@ class RideProvider extends ChangeNotifier {
   ///
   /// Fetches rides matching the search criteria.
   /// Results are available via [rides] getter.
+  /// Filters to show only upcoming rides (scheduled, active, full, driver_en_route).
   Future<bool> searchRides({
     String? origin,
     String? destination,
@@ -155,7 +156,18 @@ class RideProvider extends ChangeNotifier {
         dateTo: dateTo,
       );
 
-      _rides = rides;
+      // Filter to only show upcoming rides for passengers
+      final upcomingStatuses = {
+        'scheduled',
+        'active',
+        'full',
+        'driver_en_route',
+      };
+      _rides = rides.where((ride) {
+        final status = ride.status?.toLowerCase() ?? 'scheduled';
+        return upcomingStatuses.contains(status);
+      }).toList();
+
       _setLoading(false);
       notifyListeners();
       return true;

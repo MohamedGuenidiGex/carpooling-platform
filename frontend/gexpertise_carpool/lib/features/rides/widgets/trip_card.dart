@@ -35,6 +35,7 @@ class _TripCardState extends State<TripCard>
   late Ride currentRide;
   bool isLoading = false;
   bool _isExpanded = false;
+  bool _hasConfirmedBoarding = false; // Track if passenger confirmed boarding
   late AnimationController _animController;
   late Animation<double> _expandAnimation;
 
@@ -591,6 +592,7 @@ class _TripCardState extends State<TripCard>
 
     if (mounted) {
       if (success) {
+        setState(() => _hasConfirmedBoarding = true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Boarding confirmed! You\'re on the ride.'),
@@ -1015,14 +1017,18 @@ class _TripCardState extends State<TripCard>
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
-                                onPressed: !isLoading
+                                onPressed: !isLoading && !_hasConfirmedBoarding
                                     ? () => _confirmBoarding()
                                     : null,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green[600],
+                                  backgroundColor: _hasConfirmedBoarding
+                                      ? Colors.green[700]
+                                      : Colors.green[600],
                                   foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.grey[200],
-                                  disabledForegroundColor: Colors.grey[500],
+                                  disabledBackgroundColor: _hasConfirmedBoarding
+                                      ? Colors.green[700]
+                                      : Colors.grey[200],
+                                  disabledForegroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 11,
                                     horizontal: 16,
@@ -1044,14 +1050,21 @@ class _TripCardState extends State<TripCard>
                                               ),
                                         ),
                                       )
-                                    : const Row(
+                                    : Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(Icons.check_circle, size: 16),
-                                          SizedBox(width: 8),
+                                          Icon(
+                                            _hasConfirmedBoarding
+                                                ? Icons.check_circle
+                                                : Icons.check_circle_outline,
+                                            size: 16,
+                                          ),
+                                          const SizedBox(width: 8),
                                           Text(
-                                            'Confirm Boarding',
-                                            style: TextStyle(
+                                            _hasConfirmedBoarding
+                                                ? 'Boarding Confirmed ✓'
+                                                : 'Confirm Boarding',
+                                            style: const TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.w500,
                                               letterSpacing: 0.2,

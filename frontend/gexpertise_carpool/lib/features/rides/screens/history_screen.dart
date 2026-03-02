@@ -473,6 +473,54 @@ class _OfferedRidesTab extends StatelessWidget {
           ),
         );
 
+      case 'missed':
+        // Missed: Show badge + Delete button
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.brown[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.event_busy,
+                        size: 16,
+                        color: Colors.brown[700],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Missed',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.brown[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => _deleteRide(context, rideProvider, ride),
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: Colors.red[700],
+                tooltip: 'Delete Ride',
+              ),
+            ],
+          ),
+        );
+
       default:
         return const SizedBox.shrink();
     }

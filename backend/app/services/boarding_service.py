@@ -97,6 +97,10 @@ def confirm_boarding(reservation_id, employee_id):
         # Confirm boarding
         reservation.boarded = True
         reservation.updated_at = datetime.utcnow()
+        
+        # Notify driver about passenger boarding confirmation
+        _send_driver_boarding_confirmed_notification(reservation)
+        
         db.session.commit()
         
         logger.info(f'Passenger {employee_id} confirmed boarding for reservation {reservation_id}')
@@ -195,6 +199,24 @@ def _send_driver_passenger_missed_notification(reservation):
         ride_id=reservation.ride_id,
         type='passenger_missed_boarding',
         message=f'Passenger missed boarding deadline. {reservation.seats_reserved} seat(s) released.',
+        is_read=False,
+        created_at=datetime.utcnow()
+    )
+    db.session.add(notification)
+
+
+def _send_driver_boarding_confirmed_notification(reservation):
+    """Send notification to driver that a passenger confirmed boarding."""
+    from app.models.employee import Employee
+    ride = reservation.ride
+    passenger = Employee.query.get(reservation.employee_id)
+    passenger_name = passenger.name if passenger else 'Passenger'
+    
+    notification = Notification(
+        employee_id=ride.driver_id,
+        ride_id=reservation.ride_id,
+        type='passenger_boarded',
+        message=f'{passenger_name} has confirmed boarding ({reservation.seats_reserved} seat(s)).',
         is_read=False,
         created_at=datetime.utcnow()
     )
