@@ -76,6 +76,9 @@ class ReservationList(Resource):
     )
     def get(self):
         """List all reservations with optional filtering"""
+        # Check and expire boarding deadlines before fetching
+        check_and_expire_boarding_deadlines()
+        
         query = Reservation.query
 
         # Employee filter (for getting my bookings)
@@ -625,6 +628,9 @@ class ReservationConfirmBoarding(Resource):
         employee_id = int(get_jwt_identity())
         
         try:
+            # Check and expire any boarding deadlines before processing
+            check_and_expire_boarding_deadlines()
+            
             success, message = confirm_boarding(id, employee_id)
             
             if success:

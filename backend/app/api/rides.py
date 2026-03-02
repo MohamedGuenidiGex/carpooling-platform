@@ -3,6 +3,7 @@ from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 from werkzeug.exceptions import HTTPException
+import logging
 
 from app.extensions import db, socketio
 from app.models import Ride, Employee, Reservation, Notification
@@ -10,6 +11,8 @@ from app.utils.logger import log_action
 from app.realtime_events import emit_ride_status_update
 from app.services.ride_expiration_service import check_and_expire_rides
 from app.services.boarding_service import set_boarding_deadlines, check_and_expire_boarding_deadlines
+
+logger = logging.getLogger(__name__)
 
 api = Namespace('rides', description='Ride operations')
 
@@ -579,7 +582,12 @@ class RideBegin(Resource):
             set_boarding_deadlines(ride.id)
             
             ride.status = 'in_progress'
+            ride.updated_at = datetime.utcnow()
             db.session.commit()
+            
+            # Schedule a check for boarding deadline expiration
+            # This will be handled by lazy evaluation on subsequent API calls
+            logger.info(f'Ride {ride.id} began - boarding deadlines set for unconfirmed passengers')
             
             log_action(
                 action='RIDE_BEGUN',

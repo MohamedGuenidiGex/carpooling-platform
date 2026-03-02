@@ -50,6 +50,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   Ride? _activeRide;
   int?
   _activeReservationId; // Passenger's reservation ID for boarding confirmation
+  DateTime? _activeBoardingDeadline; // Boarding deadline for active reservation
   bool _sheetVisible = false;
   int? _currentUserId;
   final WebSocketService _wsService = WebSocketService();
@@ -182,14 +183,16 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
         'RidesScreen: Confirmed reservations found: ${confirmedReservations.length}',
       );
 
-      // Map ride IDs to reservation IDs for boarding confirmation
+      // Map ride IDs to reservation IDs and boarding deadlines for boarding confirmation
       final Map<int, int> rideToReservation = {};
+      final Map<int, DateTime?> rideToBoardingDeadline = {};
       for (final reservation in confirmedReservations) {
         final ride = reservation.ride;
         if (ride != null && isRideStatusActive(ride.status)) {
           candidateRides.add(ride);
           if (ride.id != null && reservation.id != null) {
             rideToReservation[ride.id!] = reservation.id!;
+            rideToBoardingDeadline[ride.id!] = reservation.boardingDeadline;
           }
         }
       }
@@ -216,6 +219,9 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
           _activeRide = selected;
           _activeReservationId = selected.id != null
               ? rideToReservation[selected.id!]
+              : null;
+          _activeBoardingDeadline = selected.id != null
+              ? rideToBoardingDeadline[selected.id!]
               : null;
         });
         // Trigger slide-up after frame if this is a new appearance
@@ -475,6 +481,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
                   isDriver: _activeRide!.driverId == _currentUserId,
                   onRideCompleted: _handleRideCompleted,
                   reservationId: _activeReservationId,
+                  boardingDeadline: _activeBoardingDeadline,
                 ),
               ),
             ),

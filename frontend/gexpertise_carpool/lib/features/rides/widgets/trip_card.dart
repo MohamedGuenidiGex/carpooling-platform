@@ -16,6 +16,7 @@ class TripCard extends StatefulWidget {
   final VoidCallback onRideCompleted;
   final int?
   reservationId; // Passenger's reservation ID for boarding confirmation
+  final DateTime? boardingDeadline; // Boarding deadline for passenger
 
   const TripCard({
     required this.activeRide,
@@ -23,6 +24,7 @@ class TripCard extends StatefulWidget {
     required this.isDriver,
     required this.onRideCompleted,
     this.reservationId,
+    this.boardingDeadline,
     Key? key,
   }) : super(key: key);
 
@@ -573,12 +575,30 @@ class _TripCardState extends State<TripCard>
         status != 'missed';
   }
 
-  /// Check if passenger needs to confirm boarding (ride is arrived + has reservation)
+  /// Check if passenger needs to confirm boarding
+  /// Shows during 'arrived' OR 'in_progress' (within 5-min boarding deadline)
   bool _isPassengerBoardingAction() {
+    if (widget.isDriver ||
+        widget.reservationId == null ||
+        _hasConfirmedBoarding) {
+      return false;
+    }
+
     final status = currentRide.status?.toLowerCase() ?? 'scheduled';
-    return !widget.isDriver &&
-        status == 'arrived' &&
-        widget.reservationId != null;
+
+    // Show during 'arrived' status (no deadline yet)
+    if (status == 'arrived') {
+      return true;
+    }
+
+    // Show during 'in_progress' if within boarding deadline (5 minutes)
+    if (status == 'in_progress' && widget.boardingDeadline != null) {
+      final now = DateTime.now().toUtc();
+      final deadline = widget.boardingDeadline!.toUtc();
+      return now.isBefore(deadline);
+    }
+
+    return false;
   }
 
   /// Confirm passenger boarding
