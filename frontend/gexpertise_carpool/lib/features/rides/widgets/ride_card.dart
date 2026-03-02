@@ -241,22 +241,32 @@ class _RideCardState extends State<RideCard> {
         bgColor = Colors.orange[50]!;
         textColor = Colors.orange[700]!;
         label = 'Pending';
+        break;
       case 'CONFIRMED':
         bgColor = Colors.green[50]!;
         textColor = Colors.green[700]!;
         label = 'Confirmed';
+        break;
       case 'COMPLETED':
         bgColor = Colors.blue[50]!;
         textColor = Colors.blue[700]!;
         label = 'Completed';
+        break;
       case 'CANCELLED':
         bgColor = Colors.red[50]!;
         textColor = Colors.red[700]!;
         label = 'Cancelled';
+        break;
       case 'FULL':
         bgColor = Colors.purple[50]!;
         textColor = Colors.purple[700]!;
         label = 'Full';
+        break;
+      case 'MISSED':
+        bgColor = Colors.brown[50]!;
+        textColor = Colors.brown[700]!;
+        label = 'Missed';
+        break;
       default:
         bgColor = Colors.grey[50]!;
         textColor = Colors.grey[700]!;

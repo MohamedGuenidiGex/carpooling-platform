@@ -130,6 +130,8 @@ class _TripCardState extends State<TripCard>
         return 'Completed';
       case 'cancelled':
         return 'Cancelled';
+      case 'missed':
+        return 'Missed';
       default:
         return status;
     }
@@ -154,6 +156,8 @@ class _TripCardState extends State<TripCard>
         return Colors.green;
       case 'cancelled':
         return Colors.red;
+      case 'missed':
+        return Colors.brown;
       default:
         return Colors.grey;
     }
@@ -178,6 +182,8 @@ class _TripCardState extends State<TripCard>
         return Icons.check_circle;
       case 'cancelled':
         return Icons.cancel;
+      case 'missed':
+        return Icons.event_busy;
       default:
         return Icons.info;
     }
@@ -555,7 +561,11 @@ class _TripCardState extends State<TripCard>
 
   bool _isDriverAction() {
     final status = currentRide.status?.toLowerCase() ?? 'scheduled';
-    return widget.isDriver && status != 'completed' && status != 'cancelled';
+    // Hide lifecycle buttons for terminal states (completed, cancelled, missed)
+    return widget.isDriver &&
+        status != 'completed' &&
+        status != 'cancelled' &&
+        status != 'missed';
   }
 
   // Shorten long addresses to first meaningful part
