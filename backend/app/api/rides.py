@@ -518,8 +518,9 @@ class RideArrive(Resource):
             ride.status = 'arrived'
             db.session.commit()
             
-            # Set boarding deadlines for all confirmed passengers
-            set_boarding_deadlines(ride.id)
+            # Note: Boarding deadlines are NOT set here anymore
+            # Passengers can confirm boarding anytime during 'arrived' status
+            # Timer starts when driver presses "Begin Ride"
             
             log_action(
                 action='RIDE_DRIVER_ARRIVED',
@@ -572,9 +573,10 @@ class RideBegin(Resource):
             if not ride.can_transition_to('in_progress'):
                 api.abort(400, f'Cannot transition from {ride.status} to in_progress')
             
-            # Expire any boarding deadlines before beginning the ride
-            # This ensures passengers who didn't confirm are marked MISSED
-            check_and_expire_boarding_deadlines()
+            # NEW LOGIC: Set boarding deadlines NOW (when driver presses Begin Ride)
+            # This starts the 5-minute timer for passengers who haven't confirmed yet
+            # Passengers who already confirmed (boarded=True) won't get a deadline
+            set_boarding_deadlines(ride.id)
             
             ride.status = 'in_progress'
             db.session.commit()

@@ -15,11 +15,12 @@ BOARDING_GRACE_MINUTES = 5  # Passengers have 5 minutes to confirm boarding afte
 
 def set_boarding_deadlines(ride_id):
     """
-    Set boarding deadlines for all CONFIRMED reservations when ride status becomes 'arrived'.
-    Called automatically when driver marks arrival.
+    Set boarding deadlines for UNCONFIRMED passengers when driver begins the ride.
+    Called when driver presses "Begin Ride" - starts 5-minute timer.
+    Passengers who already confirmed (boarded=True) are skipped.
     
     Args:
-        ride_id: ID of the ride that has arrived
+        ride_id: ID of the ride that is beginning
         
     Returns:
         int: Number of reservations with deadlines set
@@ -28,10 +29,11 @@ def set_boarding_deadlines(ride_id):
         now = datetime.utcnow()
         deadline = now + timedelta(minutes=BOARDING_GRACE_MINUTES)
         
-        # Get all CONFIRMED reservations for this ride
+        # Get all CONFIRMED reservations that haven't boarded yet
         reservations = Reservation.query.filter_by(
             ride_id=ride_id,
-            status='CONFIRMED'
+            status='CONFIRMED',
+            boarded=False  # Only passengers who haven't confirmed
         ).all()
         
         count = 0
@@ -39,13 +41,13 @@ def set_boarding_deadlines(ride_id):
             if not reservation.boarding_deadline:  # Only set if not already set
                 reservation.boarding_deadline = deadline
                 
-                # Send notification to passenger
-                _send_boarding_notification(reservation)
+                # Send urgent notification to passenger about the timer
+                _send_boarding_deadline_notification(reservation)
                 count += 1
         
         if count > 0:
             db.session.commit()
-            logger.info(f'Set boarding deadlines for {count} reservations on ride {ride_id}')
+            logger.info(f'Set boarding deadlines for {count} unconfirmed passengers on ride {ride_id}')
         
         return count
         
@@ -161,17 +163,16 @@ def check_and_expire_boarding_deadlines():
         return 0
 
 
-def _send_boarding_notification(reservation):
-    """Send notification to passenger about boarding deadline."""
+def _send_boarding_deadline_notification(reservation):
+    """Send urgent notification to passenger about 5-minute boarding deadline when ride begins."""
     ride = reservation.ride
     notification = Notification(
         employee_id=reservation.employee_id,
         ride_id=reservation.ride_id,
-        type='boarding_required',
-        message=f'Driver has arrived! Please confirm your boarding within 5 minutes for the ride '
-                f'from {ride.origin} to {ride.destination}.',
-        is_read=False,
-        created_at=datetime.utcnow()
+        type='boarding_deadline',
+        message=f'⚠️ URGENT: Driver is starting the ride! You have 5 minutes to confirm boarding or your reservation will be cancelled. '
+                f'Ride from {ride.origin} to {ride.destination}.',
+        is_read=False
     )
     db.session.add(notification)
 
@@ -185,8 +186,7 @@ def _send_missed_boarding_notification(reservation):
         type='boarding_missed',
         message=f'You missed the boarding deadline for the ride from {ride.origin} to {ride.destination}. '
                 f'Your reservation has been cancelled.',
-        is_read=False,
-        created_at=datetime.utcnow()
+        is_read=False
     )
     db.session.add(notification)
 
@@ -199,8 +199,7 @@ def _send_driver_passenger_missed_notification(reservation):
         ride_id=reservation.ride_id,
         type='passenger_missed_boarding',
         message=f'Passenger missed boarding deadline. {reservation.seats_reserved} seat(s) released.',
-        is_read=False,
-        created_at=datetime.utcnow()
+        is_read=False
     )
     db.session.add(notification)
 
@@ -217,8 +216,7 @@ def _send_driver_boarding_confirmed_notification(reservation):
         ride_id=reservation.ride_id,
         type='passenger_boarded',
         message=f'{passenger_name} has confirmed boarding ({reservation.seats_reserved} seat(s)).',
-        is_read=False,
-        created_at=datetime.utcnow()
+        is_read=False
     )
     db.session.add(notification)
 
