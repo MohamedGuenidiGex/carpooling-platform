@@ -10,3 +10,4 @@ Flask-JWT-Extended
 Werkzeug
 python-socketio
 python-engineio
+requests

@@ -9,6 +9,7 @@ from app.models import Reservation, Ride, Employee, Notification
 from app.utils.logger import log_action
 from app.realtime_events import emit_ride_status_update
 from app.services.boarding_service import confirm_boarding, check_and_expire_boarding_deadlines
+from app.services.ride_auto_termination_service import check_and_terminate_rides
 
 api = Namespace('reservations', description='Reservation operations')
 
@@ -76,8 +77,9 @@ class ReservationList(Resource):
     )
     def get(self):
         """List all reservations with optional filtering"""
-        # Check and expire boarding deadlines before fetching
+        # Check and expire boarding deadlines and terminate stuck rides before fetching
         check_and_expire_boarding_deadlines()
+        check_and_terminate_rides()
         
         query = Reservation.query
 

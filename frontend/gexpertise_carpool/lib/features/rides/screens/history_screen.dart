@@ -202,14 +202,57 @@ class _OfferedRidesTab extends StatelessWidget {
           );
         }
 
+        // Check if there are any completed/cancelled/missed rides
+        final hasCompletedRides = rideProvider.myOfferedRides.any((r) {
+          final status = r.status?.toLowerCase() ?? '';
+          return status == 'completed' ||
+              status == 'cancelled' ||
+              status == 'missed';
+        });
+
         return RefreshIndicator(
           onRefresh: onRefresh,
           color: BrandColors.primaryRed,
           child: ListView.builder(
             padding: const EdgeInsets.all(24),
-            itemCount: rideProvider.myOfferedRides.length,
+            itemCount:
+                rideProvider.myOfferedRides.length +
+                (hasCompletedRides ? 1 : 0),
             itemBuilder: (context, index) {
-              final ride = rideProvider.myOfferedRides[index];
+              // Show Clear Completed button as first item
+              if (index == 0 && hasCompletedRides) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        _showClearCompletedDialog(context, rideProvider),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey[700],
+                      side: BorderSide(color: Colors.grey[300]!),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: Icon(
+                      Icons.delete_sweep_outlined,
+                      size: 20,
+                      color: Colors.grey[600],
+                    ),
+                    label: Text(
+                      'Clear Completed',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                    ),
+                  ),
+                );
+              }
+
+              // Adjust index if button is shown
+              final rideIndex = hasCompletedRides ? index - 1 : index;
+              final ride = rideProvider.myOfferedRides[rideIndex];
 
               return Column(
                 children: [
@@ -382,142 +425,89 @@ class _OfferedRidesTab extends StatelessWidget {
         );
 
       case 'completed':
-        // Completed: Show badge + Delete button
+        // Completed: Show badge only
         return Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.green[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        size: 16,
-                        color: Colors.green[700],
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Completed',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.green[700],
-                        ),
-                      ),
-                    ],
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.green[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, size: 16, color: Colors.green[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Completed',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green[700],
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => _deleteRide(context, rideProvider, ride),
-                icon: const Icon(Icons.delete_outline, size: 20),
-                color: Colors.red[700],
-                tooltip: 'Delete Ride',
-              ),
-            ],
+              ],
+            ),
           ),
         );
 
       case 'cancelled':
-        // Cancelled: Show badge + Delete button
+        // Cancelled: Show badge only
         return Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.cancel, size: 16, color: Colors.grey[700]),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Cancelled',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ],
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.cancel, size: 16, color: Colors.grey[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Cancelled',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => _deleteRide(context, rideProvider, ride),
-                icon: const Icon(Icons.delete_outline, size: 20),
-                color: Colors.red[700],
-                tooltip: 'Delete Ride',
-              ),
-            ],
+              ],
+            ),
           ),
         );
 
       case 'missed':
-        // Missed: Show badge + Delete button
+        // Missed: Show badge only
         return Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.brown[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.event_busy,
-                        size: 16,
-                        color: Colors.brown[700],
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Missed',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.brown[700],
-                        ),
-                      ),
-                    ],
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.brown[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.event_busy, size: 16, color: Colors.brown[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Missed',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.brown[700],
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: () => _deleteRide(context, rideProvider, ride),
-                icon: const Icon(Icons.delete_outline, size: 20),
-                color: Colors.red[700],
-                tooltip: 'Delete Ride',
-              ),
-            ],
+              ],
+            ),
           ),
         );
 
@@ -652,46 +642,44 @@ class _OfferedRidesTab extends StatelessWidget {
     );
   }
 
-  void _deleteRide(BuildContext context, RideProvider rideProvider, Ride ride) {
+  void _showClearCompletedDialog(
+    BuildContext context,
+    RideProvider rideProvider,
+  ) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Ride?'),
-        content: Text(
-          'Are you sure you want to delete this ride to ${ride.destination}? '
-          'This will remove it from your ride history.',
+        title: const Text('Clear Completed Rides?'),
+        content: const Text(
+          'This will permanently delete all completed, cancelled, and missed rides. This action cannot be undone.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Keep'),
+            child: const Text('Cancel'),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              final success = await rideProvider.deleteRide(ride.id!);
+              final deletedCount = await rideProvider.clearCompletedRides();
+
               if (context.mounted) {
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Ride deleted successfully'),
-                      backgroundColor: Colors.green,
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      deletedCount > 0
+                          ? 'Cleared $deletedCount ride${deletedCount != 1 ? 's' : ''}'
+                          : 'No completed rides to clear',
                     ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        rideProvider.errorMessage ?? 'Failed to delete ride',
-                      ),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
+                    backgroundColor: deletedCount > 0
+                        ? Colors.green
+                        : Colors.orange,
+                  ),
+                );
               }
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Clear'),
           ),
         ],
       ),

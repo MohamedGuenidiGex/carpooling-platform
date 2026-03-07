@@ -3,7 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import '../../../core/services/osm_search_service.dart';
+import '../../../core/services/location_search_service.dart';
+import '../../../core/services/route_service.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../providers/ride_provider.dart';
 
@@ -35,56 +36,15 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
   TimeOfDay? _selectedTime;
   LatLng? _originCoordinates;
   LatLng? _destinationCoordinates;
-
-  String? _resolvedOriginAddress;
-  bool _isResolvingOrigin = false;
+  List<LatLng> _routePoints = [];
 
   @override
   void initState() {
     super.initState();
-    // Pre-fill start location if provided
+    // Pre-fill start location if provided - address already resolved from reverse geocoding
     if (widget.startName != null) {
       _originController.text = widget.startName!;
       _originCoordinates = widget.startCoordinates;
-
-      // If it's "Current Location", resolve it to a real address
-      if (widget.startName == 'Current Location' &&
-          widget.startCoordinates != null) {
-        _resolveCurrentLocation();
-      } else {
-        _resolvedOriginAddress = widget.startName;
-      }
-    }
-  }
-
-  /// Resolve "Current Location" to a real address using reverse geocoding
-  Future<void> _resolveCurrentLocation() async {
-    if (widget.startCoordinates == null) return;
-
-    setState(() {
-      _isResolvingOrigin = true;
-    });
-
-    try {
-      final address = await OsmSearchService.getAddressFromCoordinates(
-        widget.startCoordinates!,
-      );
-
-      if (mounted) {
-        setState(() {
-          _resolvedOriginAddress = address;
-          _originController.text = address;
-          _isResolvingOrigin = false;
-        });
-      }
-    } catch (e) {
-      // Keep "Current Location" if resolution fails
-      if (mounted) {
-        setState(() {
-          _isResolvingOrigin = false;
-          _resolvedOriginAddress = widget.startName;
-        });
-      }
     }
   }
 
@@ -306,7 +266,7 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     );
   }
 
-  /// Mini Map Preview with Start and Destination Markers
+  /// Mini Map Preview with Start and Destination Markers and Route
   Widget _buildMapPreview() {
     final markers = <Marker>[];
 
@@ -360,6 +320,16 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.gexpertise.carpooling',
             ),
+            if (_routePoints.isNotEmpty)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: _routePoints,
+                    color: BrandColors.primaryRed.withOpacity(0.7),
+                    strokeWidth: 3,
+                  ),
+                ],
+              ),
             if (markers.isNotEmpty) MarkerLayer(markers: markers),
           ],
         ),
@@ -367,13 +337,46 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     );
   }
 
+  /// Fit camera to show both origin and destination
+  void _fitCameraToBounds() {
+    if (_originCoordinates != null && _destinationCoordinates != null) {
+      final bounds = LatLngBounds(
+        _originCoordinates!,
+        _destinationCoordinates!,
+      );
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)),
+      );
+    }
+  }
+
+  /// Calculate and display route between origin and destination
+  Future<void> _calculateRoute() async {
+    if (_originCoordinates != null && _destinationCoordinates != null) {
+      final result = await RouteService.calculateRoute(
+        _originCoordinates!,
+        _destinationCoordinates!,
+      );
+      if (result != null && mounted) {
+        setState(() {
+          _routePoints = result.polylinePoints;
+        });
+        _fitCameraToBounds();
+      }
+    }
+  }
+
   /// Origin Field with TypeAhead for search
   Widget _buildOriginField() {
     return TypeAheadField<Map<String, dynamic>>(
       controller: _originController,
       suggestionsCallback: (pattern) async {
-        if (pattern.length < 2) return [];
-        return await OsmSearchService.searchPlaces(pattern);
+        // Use unified LocationSearchService for consistent autocomplete
+        return await LocationSearchService.searchLocations(
+          query: pattern,
+          currentLocation: widget.startCoordinates,
+          includeCurrentLocation: true,
+        );
       },
       builder: (context, controller, focusNode) {
         return TextField(
@@ -460,6 +463,8 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
             suggestion['lon'] as double,
           );
         });
+        // Calculate route when both points are available
+        _calculateRoute();
       },
     );
   }
@@ -469,8 +474,12 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     return TypeAheadField<Map<String, dynamic>>(
       controller: _destinationController,
       suggestionsCallback: (pattern) async {
-        if (pattern.length < 2) return [];
-        return await OsmSearchService.searchPlaces(pattern);
+        // Use unified LocationSearchService for consistent autocomplete
+        return await LocationSearchService.searchLocations(
+          query: pattern,
+          currentLocation: _originCoordinates ?? widget.startCoordinates,
+          includeCurrentLocation: true,
+        );
       },
       builder: (context, controller, focusNode) {
         return TextField(
@@ -557,6 +566,8 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
             suggestion['lon'] as double,
           );
         });
+        // Calculate route when both points are available
+        _calculateRoute();
       },
     );
   }

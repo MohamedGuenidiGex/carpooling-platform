@@ -6,6 +6,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../../../core/services/osm_search_service.dart';
+import '../../../core/services/location_search_service.dart';
+import '../../../core/services/route_service.dart';
 import '../../../core/services/websocket_service.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../../../core/utils/status_helpers.dart';
@@ -17,6 +19,7 @@ import '../../../features/reservations/providers/reservation_provider.dart';
 import '../models/ride_model.dart';
 import '../providers/ride_provider.dart';
 import '../widgets/trip_card.dart';
+import '../widgets/driver_info_tooltip.dart';
 import 'find_ride_screen.dart';
 import 'create_ride_screen.dart';
 
@@ -39,12 +42,14 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   int _lastKnownCount = 0;
   final MapController _mapController = MapController();
   LatLng? _currentPosition;
+  String? _userCountryCode; // 'tn' or 'fr', detected from GPS
 
-  // Unified search state
-  bool _isSearching = false;
-  SearchMode _searchMode = SearchMode.none;
-  final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
+  // Selected location state (for new permanent search flow)
+  LatLng? _selectedLocation;
+  String? _selectedLocationName;
+  final TextEditingController _locationSearchController =
+      TextEditingController();
+  final FocusNode _locationSearchFocusNode = FocusNode();
 
   // Active ride detection state
   Ride? _activeRide;
@@ -75,8 +80,8 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
     _rideCheckTimer?.cancel();
     _wsService.removeAllListeners('ride_status_updated');
     _mapController.dispose();
-    _searchController.dispose();
-    _searchFocusNode.dispose();
+    _locationSearchController.dispose();
+    _locationSearchFocusNode.dispose();
     super.dispose();
   }
 
@@ -343,6 +348,25 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
     });
     // Immediately center map on user's position
     _mapController.move(newPosition, 15.0);
+
+    // Detect country from GPS coordinates
+    _detectUserCountry(newPosition);
+  }
+
+  /// Detect user's country from GPS coordinates and cache it
+  Future<void> _detectUserCountry(LatLng coordinates) async {
+    try {
+      final countryCode = await OsmSearchService.detectCountryCode(coordinates);
+      if (mounted && countryCode != null) {
+        setState(() {
+          _userCountryCode = countryCode;
+        });
+        debugPrint('RidesScreen: Detected user country: $countryCode');
+      }
+    } catch (e) {
+      debugPrint('RidesScreen: Failed to detect country: $e');
+      // Keep default (null = will default to 'tn' in search)
+    }
   }
 
   /// Center map on current location
@@ -354,67 +378,201 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Handle map tap to select location
+  void _onMapTapped(LatLng coordinates) {
+    setState(() {
+      _selectedLocation = coordinates;
+    });
+
+    // Animate map to the tapped point
+    _mapController.move(coordinates, _mapController.camera.zoom);
+
+    // Reverse geocode to get address
+    try {
+      OsmSearchService.getAddressFromCoordinates(coordinates).then((address) {
+        if (mounted) {
+          setState(() {
+            _selectedLocationName = address;
+            _locationSearchController.text = address;
+          });
+        }
+      });
+    } catch (e) {
+      // Fallback to coordinates
+      if (mounted) {
+        setState(() {
+          _selectedLocationName =
+              '${coordinates.latitude.toStringAsFixed(4)}, ${coordinates.longitude.toStringAsFixed(4)}';
+        });
+      }
+    }
+  }
+
+  /// Get the effective start location (selected location or current position)
+  LatLng? _getEffectiveStartLocation() {
+    return _selectedLocation ?? _currentPosition;
+  }
+
+  /// Get the effective start address (selected location name or "Current Location")
+  String _getEffectiveStartAddress() {
+    return _selectedLocationName ?? 'Current Location';
+  }
+
   /// Start searching as Passenger (Find a Ride)
   void _startPassengerSearch() {
-    setState(() {
-      _isSearching = true;
-      _searchMode = SearchMode.passenger;
-    });
-    // Auto-open keyboard
-    Future.delayed(const Duration(milliseconds: 100), () {
-      _searchFocusNode.requestFocus();
-    });
-  }
+    final startLocation = _getEffectiveStartLocation();
+    final startAddress = _getEffectiveStartAddress();
 
-  /// Start searching as Driver (Offer a Ride)
-  void _startDriverSearch() {
-    setState(() {
-      _isSearching = true;
-      _searchMode = SearchMode.driver;
-    });
-    // Auto-open keyboard
-    Future.delayed(const Duration(milliseconds: 100), () {
-      _searchFocusNode.requestFocus();
-    });
-  }
-
-  /// Cancel search and return to button mode
-  void _cancelSearch() {
-    setState(() {
-      _isSearching = false;
-      _searchMode = SearchMode.none;
-      _searchController.clear();
-    });
-    _searchFocusNode.unfocus();
-  }
-
-  /// Handle location selection based on mode
-  void _onLocationSelected(Map<String, dynamic> suggestion) {
-    final String name = suggestion['display_name'] as String;
-    final double lat = suggestion['lat'] as double;
-    final double lon = suggestion['lon'] as double;
-
-    // Navigate based on mode
-    if (_searchMode == SearchMode.driver) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => CreateRideScreen(
-            startName: name,
-            startCoordinates: LatLng(lat, lon),
-          ),
-        ),
-      ).then((_) => _cancelSearch());
-    } else {
+    // If a location is selected (or current position available), navigate directly
+    if (startLocation != null) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => FindRideScreen(
-            startName: name,
-            startCoordinates: LatLng(lat, lon),
+            startName: startAddress,
+            startCoordinates: startLocation,
           ),
         ),
-      ).then((_) => _cancelSearch());
+      );
+      return;
+    }
+
+    // Otherwise, show a snackbar prompting user to select a location
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Please search and select a location first'),
+        backgroundColor: BrandColors.primaryRed,
+      ),
+    );
+  }
+
+  /// Start searching as Driver (Offer a Ride)
+  void _startDriverSearch() {
+    final startLocation = _getEffectiveStartLocation();
+    final startAddress = _getEffectiveStartAddress();
+
+    // If a location is selected (or current position available), navigate directly
+    if (startLocation != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreateRideScreen(
+            startName: startAddress,
+            startCoordinates: startLocation,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Otherwise, show a snackbar prompting user to select a location
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Please search and select a location first'),
+        backgroundColor: BrandColors.primaryRed,
+      ),
+    );
+  }
+
+  /// Handle location selection from search
+  void _onLocationSelected(Map<String, dynamic> suggestion) {
+    final bool isCurrentLocation = suggestion['is_current_location'] == true;
+
+    // Handle "Use Current Location" - retrieve fresh GPS and reverse geocode
+    if (isCurrentLocation) {
+      _handleUseCurrentLocation();
+      return;
+    }
+
+    // Regular location selection
+    final String name = suggestion['display_name'] as String;
+    final double lat = suggestion['lat'] as double;
+    final double lon = suggestion['lon'] as double;
+    final coordinates = LatLng(lat, lon);
+
+    setState(() {
+      _selectedLocation = coordinates;
+      _selectedLocationName = name;
+      _locationSearchController.text = name;
+    });
+
+    // Animate map to selected location
+    _mapController.move(coordinates, 15.0);
+  }
+
+  /// Handle "Use Current Location" selection
+  Future<void> _handleUseCurrentLocation() async {
+    try {
+      // Check location permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Location permission denied. Please enable location services.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Location permissions are permanently denied. Please enable them in settings.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Get fresh GPS location
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final lat = position.latitude;
+      final lon = position.longitude;
+      final coordinates = LatLng(lat, lon);
+
+      // Reverse geocode to get readable address
+      final address = await OsmSearchService.getAddressFromCoordinates(
+        coordinates,
+      );
+
+      // Remove loading indicator
+      Navigator.of(context).pop();
+
+      setState(() {
+        _selectedLocation = coordinates;
+        _selectedLocationName = address;
+        _locationSearchController.text = address;
+      });
+
+      // Animate map to current location
+      _mapController.move(coordinates, 15.0);
+    } catch (e) {
+      // Remove loading indicator if still showing
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to get current location: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -424,48 +582,49 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      drawer: _isSearching ? null : const GExpertiseDrawer(),
+      drawer: const GExpertiseDrawer(),
       body: Stack(
         children: [
           // Layer 1: Map Background (always visible)
           _MapBackground(
             mapController: _mapController,
             currentPosition: _currentPosition,
-            showCenterPin: _isSearching,
+            showCenterPin: false,
             activeRide: _activeRide,
             isDriver:
                 _activeRide != null && _activeRide!.driverId == _currentUserId,
             wsService: _wsService,
+            onTap: _onMapTapped,
+            selectedLocation: _selectedLocation,
           ),
 
-          // Layer 2: Menu Button (Top Left) - hidden in search mode
-          if (!_isSearching) _MenuButton(),
-
-          // Layer 3: Search Bar (Top) - only in search mode
-          if (_isSearching)
-            _SearchBar(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              currentPosition: _currentPosition,
-              onLocationSelected: _onLocationSelected,
+          // Layer 2: Integrated Search Bar with Menu (Top)
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: _IntegratedSearchBar(
+                controller: _locationSearchController,
+                focusNode: _locationSearchFocusNode,
+                currentPosition: _currentPosition,
+                userCountryCode: _userCountryCode,
+                onLocationSelected: _onLocationSelected,
+              ),
             ),
+          ),
 
-          // Layer 4: Current Location Button (Bottom Right, above panels)
+          // Layer 3: Current Location Button (Bottom Right, above panels)
           _CurrentLocationButton(
             onPressed: _goToCurrentLocation,
             bottomOffset: hasActiveRide ? 280 : 200,
           ),
 
-          // Layer 5: Bottom action panel (always visible unless searching)
-          if (!_isSearching)
-            _BottomActionPanel(
-              onFindRide: _startPassengerSearch,
-              onOfferRide: _startDriverSearch,
-            )
-          else
-            _CancelPanel(onCancel: _cancelSearch),
+          // Layer 4: Bottom action panel (always visible)
+          _BottomActionPanel(
+            onFindRide: _startPassengerSearch,
+            onOfferRide: _startDriverSearch,
+          ),
 
-          // Layer 6: TripCard bottom sheet (above action panel when active)
+          // Layer 5: TripCard bottom sheet (above action panel when active)
           if (hasActiveRide)
             Positioned(
               left: 0,
@@ -495,6 +654,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
 ///
 /// Displays an interactive map using flutter_map with OpenStreetMap tiles.
 /// For passengers, shows animated driver location marker during active rides.
+/// Supports tap-to-select location when not in search mode.
 class _MapBackground extends StatefulWidget {
   final MapController mapController;
   final LatLng? currentPosition;
@@ -502,6 +662,8 @@ class _MapBackground extends StatefulWidget {
   final Ride? activeRide;
   final bool isDriver;
   final WebSocketService wsService;
+  final Function(LatLng)? onTap;
+  final LatLng? selectedLocation;
 
   const _MapBackground({
     required this.mapController,
@@ -510,6 +672,8 @@ class _MapBackground extends StatefulWidget {
     this.activeRide,
     this.isDriver = false,
     required this.wsService,
+    this.onTap,
+    this.selectedLocation,
   });
 
   @override
@@ -524,9 +688,18 @@ class _MapBackgroundState extends State<_MapBackground>
   Animation<double>? _animation;
   bool _hasInitiallyFramed = false;
 
+  // Driver info panel state
+  bool _showDriverInfo = false;
+
+  // ETA calculation
+  String? _currentETA;
+  final DebouncedRouteCalculator _etaCalculator = DebouncedRouteCalculator();
+
   @override
   void initState() {
     super.initState();
+    // Initialize driver position for passengers
+    _initializeDriverPosition();
     // Defer listener setup until after first frame when WebSocket is connected
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -535,11 +708,127 @@ class _MapBackgroundState extends State<_MapBackground>
     });
   }
 
+  /// Initialize driver position for passengers using ride origin as fallback
+  void _initializeDriverPosition() {
+    // Only for passengers with active rides
+    if (widget.isDriver || widget.activeRide == null) return;
+
+    final status = widget.activeRide!.status?.toLowerCase() ?? '';
+    final isActiveStatus =
+        status == 'driver_en_route' || status == 'in_progress';
+
+    if (!isActiveStatus) return;
+
+    // Use ride origin as initial driver position
+    if (widget.activeRide!.originLat != null &&
+        widget.activeRide!.originLng != null) {
+      setState(() {
+        _currentDriverPosition = LatLng(
+          widget.activeRide!.originLat!,
+          widget.activeRide!.originLng!,
+        );
+      });
+      debugPrint(
+        'RidesScreen: Initialized driver position with ride origin: '
+        '(${widget.activeRide!.originLat}, ${widget.activeRide!.originLng})',
+      );
+
+      // Trigger initial ETA calculation
+      _updateETA();
+    }
+  }
+
   @override
   void dispose() {
     widget.wsService.off('driver_location_updated');
     _animController?.dispose();
     super.dispose();
+  }
+
+  /// Calculate ETA based on current ride status
+  Future<void> _updateETA() async {
+    if (_currentDriverPosition == null || widget.activeRide == null) return;
+
+    final status = widget.activeRide!.status?.toLowerCase() ?? '';
+    LatLng? destination;
+
+    // Determine destination based on ride status
+    if (status == 'driver_en_route') {
+      // ETA to pickup (origin)
+      if (widget.activeRide!.originLat != null &&
+          widget.activeRide!.originLng != null) {
+        destination = LatLng(
+          widget.activeRide!.originLat!,
+          widget.activeRide!.originLng!,
+        );
+      }
+    } else if (status == 'in_progress') {
+      // ETA to destination
+      if (widget.activeRide!.destinationLat != null &&
+          widget.activeRide!.destinationLng != null) {
+        destination = LatLng(
+          widget.activeRide!.destinationLat!,
+          widget.activeRide!.destinationLng!,
+        );
+      }
+    } else {
+      // No ETA for other statuses
+      setState(() => _currentETA = null);
+      return;
+    }
+
+    if (destination == null) return;
+
+    // Use debounced calculator to prevent excessive API calls
+    final result = await _etaCalculator.calculateIfNeeded(
+      _currentDriverPosition!,
+      destination,
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _currentETA = result.formattedDuration;
+      });
+    }
+  }
+
+  /// Force ETA update (for initial load)
+  Future<void> _forceETAUpdate() async {
+    if (_currentDriverPosition == null || widget.activeRide == null) return;
+
+    final status = widget.activeRide!.status?.toLowerCase() ?? '';
+    LatLng? destination;
+
+    if (status == 'driver_en_route') {
+      if (widget.activeRide!.originLat != null &&
+          widget.activeRide!.originLng != null) {
+        destination = LatLng(
+          widget.activeRide!.originLat!,
+          widget.activeRide!.originLng!,
+        );
+      }
+    } else if (status == 'in_progress') {
+      if (widget.activeRide!.destinationLat != null &&
+          widget.activeRide!.destinationLng != null) {
+        destination = LatLng(
+          widget.activeRide!.destinationLat!,
+          widget.activeRide!.destinationLng!,
+        );
+      }
+    }
+
+    if (destination == null) return;
+
+    final result = await _etaCalculator.forceCalculate(
+      _currentDriverPosition!,
+      destination,
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _currentETA = result.formattedDuration;
+      });
+    }
   }
 
   @override
@@ -553,9 +842,12 @@ class _MapBackgroundState extends State<_MapBackground>
       _hasInitiallyFramed = false;
       _animController?.dispose();
       _animController = null;
+
+      // Initialize position for new ride
+      _initializeDriverPosition();
     }
 
-    // Clear driver marker when ride completes
+    // Clear driver position when ride completes
     final oldStatus = oldWidget.activeRide?.status?.toLowerCase() ?? '';
     final newStatus = widget.activeRide?.status?.toLowerCase() ?? '';
     if ((oldStatus == 'driver_en_route' || oldStatus == 'in_progress') &&
@@ -612,6 +904,9 @@ class _MapBackgroundState extends State<_MapBackground>
           _animateMarker();
         }
       });
+
+      // Update ETA with debouncing (5 second interval)
+      _updateETA();
     });
   }
 
@@ -714,128 +1009,363 @@ class _MapBackgroundState extends State<_MapBackground>
     final LatLng initialCenter =
         widget.currentPosition ?? const LatLng(34.7408, 10.7600);
 
-    return FlutterMap(
-      mapController: widget.mapController,
-      options: MapOptions(
-        initialCenter: initialCenter,
-        initialZoom: 15.0,
-        minZoom: 3,
-        maxZoom: 18,
-      ),
+    return Stack(
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.gexpertise.carpool',
-        ),
-        // Center pin marker when in search mode
-        if (widget.showCenterPin)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: initialCenter,
-                width: 40,
-                height: 40,
-                child: const Icon(
-                  Icons.location_pin,
-                  color: Colors.red,
-                  size: 40,
-                ),
-              ),
-            ],
+        FlutterMap(
+          mapController: widget.mapController,
+          options: MapOptions(
+            initialCenter: initialCenter,
+            initialZoom: 15.0,
+            minZoom: 3,
+            maxZoom: 18,
+            onTap: (tapPosition, latLng) {
+              if (widget.onTap != null) {
+                widget.onTap!(latLng);
+              }
+            },
           ),
-        // Current location marker
-        if (widget.currentPosition != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: widget.currentPosition!,
-                width: 40,
-                height: 40,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.3),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.gexpertise.carpool',
+            ),
+            // Selected location marker (from map tap)
+            if (widget.selectedLocation != null)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: widget.selectedLocation!,
+                    width: 44,
+                    height: 44,
                     child: Container(
-                      width: 16,
-                      height: 16,
-                      decoration: const BoxDecoration(
-                        color: Colors.blue,
+                      decoration: BoxDecoration(
+                        color: BrandColors.primaryRed.withOpacity(0.2),
                         shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: const BoxDecoration(
+                            color: BrandColors.primaryRed,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black26,
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.location_on,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
-        // Driver location marker (for passengers only)
-        if (!widget.isDriver && _currentDriverPosition != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: _currentDriverPosition!,
-                width: 40,
-                height: 40,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
+            // Center pin marker when in search mode
+            if (widget.showCenterPin)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: initialCenter,
+                    width: 40,
+                    height: 40,
+                    child: const Icon(
+                      Icons.location_pin,
+                      color: Colors.red,
+                      size: 40,
+                    ),
+                  ),
+                ],
+              ),
+            // Current location marker
+            if (widget.currentPosition != null)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: widget.currentPosition!,
+                    width: 40,
+                    height: 40,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.3),
+                        shape: BoxShape.circle,
                       ),
-                    ],
+                      child: Center(
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            color: Colors.blue,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.directions_car,
-                    color: BrandColors.primaryRed,
-                    size: 24,
-                  ),
-                ),
+                ],
               ),
-            ],
-          ),
+            // Driver location marker with tooltip (for passengers only)
+            if (!widget.isDriver && _currentDriverPosition != null)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: _currentDriverPosition!,
+                    width: 180,
+                    height: 200,
+                    alignment: Alignment.bottomCenter,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() => _showDriverInfo = !_showDriverInfo);
+                        if (_showDriverInfo) _forceETAUpdate();
+                      },
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.bottomCenter,
+                        children: [
+                          // Car marker (always shown at bottom)
+                          Positioned(
+                            bottom: 0,
+                            child: AnimatedScale(
+                              scale: _showDriverInfo ? 1.1 : 1.0,
+                              duration: const Duration(milliseconds: 200),
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.directions_car,
+                                  color: BrandColors.primaryRed,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Tooltip (shown above marker when active)
+                          if (_showDriverInfo)
+                            Positioned(
+                              bottom: 48,
+                              child: AnimatedScale(
+                                scale: _showDriverInfo ? 1.0 : 0.8,
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.easeOutCubic,
+                                child: AnimatedOpacity(
+                                  opacity: _showDriverInfo ? 1.0 : 0.0,
+                                  duration: const Duration(milliseconds: 150),
+                                  child: DriverInfoTooltip(
+                                    driverPosition: _currentDriverPosition!,
+                                    driverName:
+                                        widget.activeRide?.driverName ??
+                                        'Unknown',
+                                    driverInitial:
+                                        (widget.activeRide?.driverName ??
+                                                '?')[0]
+                                            .toUpperCase(),
+                                    carModel: widget.activeRide?.driverCarModel,
+                                    carColor: widget.activeRide?.driverCarColor,
+                                    eta: _currentETA,
+                                    onClose: () =>
+                                        setState(() => _showDriverInfo = false),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
       ],
     );
   }
 }
 
-/// Menu Button (Top Left)
+/// Integrated Search Bar with Menu
 ///
-/// Hamburger menu button that opens the drawer.
-class _MenuButton extends StatelessWidget {
+/// Maps-style floating search bar with integrated menu button, search field, and clear.
+/// Single unified container - floating, rounded, subtle shadow.
+class _IntegratedSearchBar extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final LatLng? currentPosition;
+  final String? userCountryCode; // 'tn' or 'fr' for country-based search
+  final Function(Map<String, dynamic>) onLocationSelected;
+
+  const _IntegratedSearchBar({
+    required this.controller,
+    required this.focusNode,
+    this.currentPosition,
+    this.userCountryCode,
+    required this.onLocationSelected,
+  });
+
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(left: 16, top: 8),
-        child: Builder(
-          builder: (context) => GestureDetector(
-            onTap: () => Scaffold.of(context).openDrawer(),
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                    spreadRadius: -2,
-                  ),
-                ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Container(
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+                spreadRadius: -2,
               ),
-              child: const Icon(Icons.menu, color: BrandColors.black, size: 24),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: TypeAheadField<Map<String, dynamic>>(
+              controller: controller,
+              focusNode: focusNode,
+              suggestionsCallback: (pattern) async {
+                try {
+                  // Use unified LocationSearchService for consistent autocomplete
+                  final results = await LocationSearchService.searchLocations(
+                    query: pattern,
+                    currentLocation: currentPosition,
+                    userCountryCode: userCountryCode,
+                    includeCurrentLocation: true,
+                  );
+                  return results;
+                } catch (e) {
+                  debugPrint('Search error: $e');
+                  return <Map<String, dynamic>>[];
+                }
+              },
+              builder: (context, controller, focusNode) {
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: InputDecoration(
+                    hintText: 'Search places...',
+                    hintStyle: TextStyle(fontSize: 15, color: Colors.grey[500]),
+                    prefixIcon: Builder(
+                      builder: (context) => InkWell(
+                        onTap: () => Scaffold.of(context).openDrawer(),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          child: const Icon(
+                            Icons.menu,
+                            color: BrandColors.black,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                    ),
+                    suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: controller,
+                      builder: (context, value, child) {
+                        if (value.text.isEmpty) {
+                          return const SizedBox(width: 48);
+                        }
+                        return InkWell(
+                          onTap: () => controller.clear(),
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.grey,
+                              size: 18,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    border: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                );
+              },
+              itemBuilder: (context, suggestion) {
+                final isCurrentLocation =
+                    suggestion['is_current_location'] == true;
+                final displayName =
+                    suggestion['display_name'] as String? ??
+                    suggestion['name'] as String? ??
+                    'Unknown location';
+                return ListTile(
+                  dense: true,
+                  leading: Icon(
+                    isCurrentLocation ? Icons.my_location : Icons.location_on,
+                    color: isCurrentLocation ? Colors.green : Colors.grey,
+                    size: 20,
+                  ),
+                  title: Text(
+                    displayName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                );
+              },
+              decorationBuilder: (context, child) {
+                return Material(
+                  type: MaterialType.card,
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white,
+                  clipBehavior: Clip.antiAlias,
+                  child: SizedBox(
+                    width: constraints.maxWidth,
+                    child: IntrinsicWidth(
+                      stepWidth: constraints.maxWidth,
+                      child: child,
+                    ),
+                  ),
+                );
+              },
+              onSelected: (suggestion) {
+                onLocationSelected(suggestion);
+              },
+              emptyBuilder: (context) => const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'No locations found',
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
+                ),
+              ),
+              loadingBuilder: (context) => const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -941,248 +1471,6 @@ class _BottomActionPanel extends StatelessWidget {
                   icon: Icons.add_circle_outline,
                   onPressed: onOfferRide,
                   isOutlined: true,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Search Bar Widget (Picker Mode)
-///
-/// TypeAheadField for searching places via OSM Nominatim.
-class _SearchBar extends StatelessWidget {
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final LatLng? currentPosition;
-  final Function(Map<String, dynamic>) onLocationSelected;
-
-  const _SearchBar({
-    required this.controller,
-    required this.focusNode,
-    this.currentPosition,
-    required this.onLocationSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: TypeAheadField<Map<String, dynamic>>(
-            controller: controller,
-            focusNode: focusNode,
-            suggestionsCallback: (pattern) async {
-              if (pattern.length < 2) {
-                return <Map<String, dynamic>>[];
-              }
-              try {
-                final results = await OsmSearchService.searchPlaces(
-                  pattern,
-                  currentLocation: currentPosition,
-                );
-                return results;
-              } catch (e) {
-                debugPrint('Search error: $e');
-                return <Map<String, dynamic>>[];
-              }
-            },
-            builder: (context, controller, focusNode) {
-              return TextField(
-                controller: controller,
-                focusNode: focusNode,
-                decoration: InputDecoration(
-                  hintText: 'Search location...',
-                  prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                  suffixIcon: controller.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, color: Colors.grey),
-                          onPressed: () => controller.clear(),
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: const BorderSide(
-                      color: BrandColors.primaryRed,
-                      width: 2,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                ),
-              );
-            },
-            itemBuilder: (context, suggestion) {
-              final isCurrentLocation =
-                  suggestion['is_current_location'] == true;
-              final displayName =
-                  suggestion['display_name'] as String? ??
-                  suggestion['name'] as String? ??
-                  'Unknown location';
-              return ListTile(
-                leading: Icon(
-                  isCurrentLocation ? Icons.my_location : Icons.location_on,
-                  color: isCurrentLocation ? Colors.green : Colors.grey,
-                ),
-                title: Text(
-                  displayName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14),
-                ),
-              );
-            },
-            decorationBuilder: (context, child) {
-              return Material(
-                type: MaterialType.card,
-                elevation: 4,
-                borderRadius: BorderRadius.circular(24),
-                color: Colors.white,
-                clipBehavior: Clip.antiAlias,
-                child: child,
-              );
-            },
-            onSelected: (suggestion) {
-              onLocationSelected(suggestion);
-            },
-            emptyBuilder: (context) => const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text(
-                'No locations found',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-            loadingBuilder: (context) => const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            ),
-            errorBuilder: (context, error) => Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'Error: $error',
-                style: const TextStyle(color: Colors.red),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Cancel Panel (Picker Mode)
-///
-/// Simple cancel button for the streamlined location picker.
-class _CancelPanel extends StatelessWidget {
-  final VoidCallback onCancel;
-
-  const _CancelPanel({required this.onCancel});
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(24),
-            topRight: Radius.circular(24),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 24,
-              offset: const Offset(0, -4),
-              spreadRadius: -4,
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle bar
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Instructions
-                const Text(
-                  'Search and select your starting location',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-
-                // Cancel Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: OutlinedButton.icon(
-                    onPressed: onCancel,
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    label: const Text(
-                      'CANCEL',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.grey),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
                 ),
               ],
             ),

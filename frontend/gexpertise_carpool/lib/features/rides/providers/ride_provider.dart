@@ -396,6 +396,33 @@ class RideProvider extends ChangeNotifier {
     }
   }
 
+  /// Clear completed/cancelled/missed rides from offered rides list
+  ///
+  /// Deletes all terminal-state rides and returns the count deleted.
+  Future<int> clearCompletedRides() async {
+    final terminalStatuses = {'completed', 'cancelled', 'missed'};
+    final ridesToDelete = _myOfferedRides.where((ride) {
+      final status = ride.status?.toLowerCase() ?? '';
+      return terminalStatuses.contains(status);
+    }).toList();
+
+    int deletedCount = 0;
+    for (final ride in ridesToDelete) {
+      if (ride.id == null) continue;
+      try {
+        await _rideRepository.deleteRide(ride.id!);
+        _myOfferedRides.removeWhere((r) => r.id == ride.id);
+        deletedCount++;
+      } catch (e) {
+        // Continue deleting others even if one fails
+        debugPrint('Failed to delete ride ${ride.id}: $e');
+      }
+    }
+
+    notifyListeners();
+    return deletedCount;
+  }
+
   /// Get ride by ID
   ///
   /// Fetches a single ride details.

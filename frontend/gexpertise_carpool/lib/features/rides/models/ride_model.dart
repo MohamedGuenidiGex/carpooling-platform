@@ -23,6 +23,8 @@ class Ride {
   final List<Reservation>? reservations;
   final String? driverName;
   final String? driverEmail;
+  final String? driverCarModel;
+  final String? driverCarColor;
 
   Ride({
     this.id,
@@ -42,6 +44,8 @@ class Ride {
     this.reservations,
     this.driverName,
     this.driverEmail,
+    this.driverCarModel,
+    this.driverCarColor,
   });
 
   /// Create Ride from JSON response
@@ -53,7 +57,6 @@ class Ride {
     debugPrint('  destination_lat in JSON: ${json['destination_lat']}');
     debugPrint('  destination_lng in JSON: ${json['destination_lng']}');
 
-    // Extract driver info from nested driver object if present
     String? driverName;
     String? driverEmail;
 
@@ -98,6 +101,8 @@ class Ride {
           .toList(),
       driverName: driverName,
       driverEmail: driverEmail,
+      driverCarModel: json['driver_car_model'] as String?,
+      driverCarColor: json['driver_car_color'] as String?,
     );
   }
 
@@ -136,6 +141,8 @@ class Ride {
     List<Reservation>? reservations,
     String? driverName,
     String? driverEmail,
+    String? driverCarModel,
+    String? driverCarColor,
   }) {
     return Ride(
       id: id ?? this.id,
@@ -155,6 +162,8 @@ class Ride {
       reservations: reservations ?? this.reservations,
       driverName: driverName ?? this.driverName,
       driverEmail: driverEmail ?? this.driverEmail,
+      driverCarModel: driverCarModel ?? this.driverCarModel,
+      driverCarColor: driverCarColor ?? this.driverCarColor,
     );
   }
 

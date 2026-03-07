@@ -9,8 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Grace periods
-REMINDER_GRACE_MINUTES = 10  # Send reminder at departure + 10 minutes
-EXPIRATION_GRACE_MINUTES = 30  # Mark as missed at departure + 30 minutes
+REMINDER_GRACE_MINUTES = 5  # Send reminder at departure + 5 minutes
+EXPIRATION_GRACE_MINUTES = 10  # Mark as missed at departure + 10 minutes
 
 
 def check_and_expire_rides():
@@ -121,7 +121,7 @@ def _send_expiration_reminder(ride):
         ride_id=ride.id,
         type='ride_expiration_warning',
         message=f'Your ride from {ride.origin} to {ride.destination} has not started. '
-                f'Please start it soon or it will be marked as missed.',
+                f'Please start it within the next 5 minutes or it will be marked as missed.',
         is_read=False,
         created_at=datetime.utcnow()
     )
@@ -142,7 +142,7 @@ def _create_missed_notification(ride):
         ride_id=ride.id,
         type='ride_missed',
         message=f'Your ride from {ride.origin} to {ride.destination} was marked as missed '
-                f'because it was not started within 30 minutes of departure time.',
+                f'because it was not started within 10 minutes of departure time.',
         is_read=False,
         created_at=datetime.utcnow()
     )

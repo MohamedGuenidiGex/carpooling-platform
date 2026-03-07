@@ -10,21 +10,55 @@ class OsmSearchService {
   static const String _baseUrl = 'https://nominatim.openstreetmap.org';
   static const String _userAgent = 'com.gexpertise.carpooling';
 
+  /// Detect country code from GPS coordinates
+  ///
+  /// Returns 'tn' for Tunisia, 'fr' for France, or null if detection fails.
+  /// Uses reverse geocoding to extract country_code from address.
+  static Future<String?> detectCountryCode(LatLng coordinates) async {
+    try {
+      final url = Uri.parse(
+        '$_baseUrl/reverse?lat=${coordinates.latitude}&lon=${coordinates.longitude}&format=json&addressdetails=1',
+      );
+
+      final response = await http.get(
+        url,
+        headers: {'User-Agent': _userAgent, 'Accept-Language': 'fr,en'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> result = json.decode(response.body);
+        final address = result['address'] as Map<String, dynamic>?;
+
+        if (address != null && address['country_code'] != null) {
+          final countryCode = (address['country_code'] as String).toLowerCase();
+          // Only support Tunisia and France
+          if (countryCode == 'tn' || countryCode == 'fr') {
+            return countryCode;
+          }
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Search for places by query string
   ///
   /// Returns a list of places with display_name, lat, and lon.
-  /// Restricted to Tunisia (countrycodes=tn) for better local results.
+  /// Prioritizes user's detected country (tn or fr) but allows global search.
   /// If currentLocation is provided and query is empty/short, prepends "Current Location" option.
   static Future<List<Map<String, dynamic>>> searchPlaces(
     String query, {
     LatLng? currentLocation,
+    String? userCountryCode, // 'tn' or 'fr', defaults to 'tn'
   }) async {
     final List<Map<String, dynamic>> results = [];
 
-    // Add "Current Location" option if available and query is short/empty
+    // Add "Use Current Location" option if available and query is short/empty
     if (currentLocation != null && query.trim().length < 3) {
       results.add({
-        'display_name': 'Current Location',
+        'display_name': 'Use Current Location',
         'lat': currentLocation.latitude,
         'lon': currentLocation.longitude,
         'is_current_location': true,
@@ -37,15 +71,81 @@ class OsmSearchService {
     }
 
     final encodedQuery = Uri.encodeComponent(query.trim());
-    final url = Uri.parse(
-      '$_baseUrl/search?q=$encodedQuery&format=json&limit=5&countrycodes=tn',
-    );
+
+    // Use detected country code or default to Tunisia
+    final countryCode = (userCountryCode ?? 'tn').toLowerCase();
+    final validCountryCode = (countryCode == 'tn' || countryCode == 'fr')
+        ? countryCode
+        : 'tn';
+
+    // Build base query parameters
+    final baseParams = {
+      'q': encodedQuery,
+      'format': 'json',
+      'limit': '10',
+      'addressdetails': '1',
+    };
+
+    // Add location bias if current location is available
+    Map<String, String>? viewboxParams;
+    if (currentLocation != null) {
+      final lat = currentLocation.latitude;
+      final lon = currentLocation.longitude;
+      final offset = 1.0; // ~100km radius for better coverage
+      final viewbox =
+          '${lon - offset},${lat + offset},${lon + offset},${lat - offset}';
+      viewboxParams = {
+        'viewbox': viewbox,
+        'bounded': '0', // Don't restrict to viewbox, just prioritize
+      };
+    }
 
     try {
-      final response = await http.get(url, headers: {'User-Agent': _userAgent});
+      // STRATEGY 1: Try with country filter first (prioritizes local results)
+      var queryParams = {
+        ...baseParams,
+        'countrycodes': validCountryCode,
+        if (viewboxParams != null) ...viewboxParams,
+      };
+
+      var urlBuilder = Uri.parse(
+        '$_baseUrl/search',
+      ).replace(queryParameters: queryParams);
+
+      var response = await http.get(
+        urlBuilder,
+        headers: {'User-Agent': _userAgent, 'Accept-Language': 'fr,en'},
+      );
+
+      List<dynamic> apiResults = [];
 
       if (response.statusCode == 200) {
-        final List<dynamic> apiResults = json.decode(response.body);
+        apiResults = json.decode(response.body);
+      }
+
+      // STRATEGY 2: If no results with country filter, try global search
+      if (apiResults.isEmpty) {
+        queryParams = {
+          ...baseParams,
+          if (viewboxParams != null) ...viewboxParams,
+        };
+
+        urlBuilder = Uri.parse(
+          '$_baseUrl/search',
+        ).replace(queryParameters: queryParams);
+
+        response = await http.get(
+          urlBuilder,
+          headers: {'User-Agent': _userAgent, 'Accept-Language': 'fr,en'},
+        );
+
+        if (response.statusCode == 200) {
+          apiResults = json.decode(response.body);
+        }
+      }
+
+      // Parse and return results
+      if (apiResults.isNotEmpty) {
         results.addAll(
           apiResults.map((item) {
             return {
@@ -59,10 +159,9 @@ class OsmSearchService {
             };
           }).toList(),
         );
-        return results;
-      } else {
-        throw Exception('Failed to search places: ${response.statusCode}');
       }
+
+      return results;
     } catch (e) {
       throw Exception('Network error during place search: $e');
     }
@@ -75,7 +174,10 @@ class OsmSearchService {
     final url = Uri.parse('$_baseUrl/reverse?lat=$lat&lon=$lon&format=json');
 
     try {
-      final response = await http.get(url, headers: {'User-Agent': _userAgent});
+      final response = await http.get(
+        url,
+        headers: {'User-Agent': _userAgent, 'Accept-Language': 'fr,en'},
+      );
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> result = json.decode(response.body);
@@ -97,7 +199,10 @@ class OsmSearchService {
         '$_baseUrl/reverse?lat=${coordinates.latitude}&lon=${coordinates.longitude}&format=json&addressdetails=1',
       );
 
-      final response = await http.get(url, headers: {'User-Agent': _userAgent});
+      final response = await http.get(
+        url,
+        headers: {'User-Agent': _userAgent, 'Accept-Language': 'fr,en'},
+      );
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> result = json.decode(response.body);

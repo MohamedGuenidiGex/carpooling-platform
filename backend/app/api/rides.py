@@ -12,6 +12,7 @@ from app.utils.geo import matches_ride_location, PICKUP_RADIUS_KM, DESTINATION_R
 from app.realtime_events import emit_ride_status_update
 from app.services.ride_expiration_service import check_and_expire_rides
 from app.services.boarding_service import set_boarding_deadlines, check_and_expire_boarding_deadlines
+from app.services.ride_auto_termination_service import check_and_terminate_rides
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ ride_response = api.model('RideResponse', {
     'id': fields.Integer(description='Ride ID'),
     'driver_id': fields.Integer(description='Employee ID of the driver'),
     'driver_name': fields.String(description='Driver name'),
+    'driver_car_model': fields.String(description='Driver car model'),
+    'driver_car_color': fields.String(description='Driver car color'),
     'origin': fields.String(description='Pickup location'),
     'destination': fields.String(description='Drop-off location'),
     'origin_lat': fields.Float(description='Origin latitude'),
@@ -89,14 +92,18 @@ def serialize_ride_with_reservations(ride):
         Reservation.ride_id == ride.id
     ).all()
     
-    # Get driver name
+    # Get driver name and car info
     driver = Employee.query.get(ride.driver_id)
     driver_name = driver.name if driver else None
+    driver_car_model = driver.car_model if driver else None
+    driver_car_color = driver.car_color if driver else None
     
     return {
         'id': ride.id,
         'driver_id': ride.driver_id,
         'driver_name': driver_name,
+        'driver_car_model': driver_car_model,
+        'driver_car_color': driver_car_color,
         'origin': ride.origin,
         'destination': ride.destination,
         'origin_lat': ride.origin_lat,
@@ -155,23 +162,36 @@ class RideList(Resource):
     @api.marshal_with(paginated_rides_response)
     def get(self):
         """List all rides with optional filtering, sorting, and pagination"""
-        # Lazy expiration checks
+        # Lazy expiration and termination checks
         try:
             check_and_expire_rides()
             check_and_expire_boarding_deadlines()
+            check_and_terminate_rides()
         except Exception as e:
             # Log but don't fail the request
             import logging
-            logging.getLogger(__name__).error(f'Expiration check failed: {e}')
+            logging.getLogger(__name__).error(f'Expiration/termination check failed: {e}')
         
-        # Exclude only soft-deleted rides (keep completed/cancelled/missed for history)
+        # Base query: exclude soft-deleted rides
         query = Ride.query.filter(Ride.is_deleted == False)
-
+        
         # Coordinate-based location filters (replaces string-based matching)
         origin_lat = request.args.get('origin_lat', type=float)
         origin_lng = request.args.get('origin_lng', type=float)
         destination_lat = request.args.get('destination_lat', type=float)
         destination_lng = request.args.get('destination_lng', type=float)
+        
+        # For passenger search (when coordinates are provided), exclude terminal and begun rides
+        # Only show rides that are available for booking: scheduled, driver_en_route, arrived
+        # Exclude: completed, missed, in_progress (ride has begun), cancelled
+        is_passenger_search = (origin_lat is not None and origin_lng is not None and 
+                              destination_lat is not None and destination_lng is not None)
+        
+        if is_passenger_search:
+            # Exclude rides that are completed, missed, in_progress, or cancelled
+            query = query.filter(
+                Ride.status.notin_(['completed', 'missed', 'in_progress', 'cancelled'])
+            )
         
         # Optional custom radii (use defaults if not provided)
         pickup_radius = request.args.get('pickup_radius_km', type=float, default=PICKUP_RADIUS_KM)
@@ -403,6 +423,12 @@ class RideDetail(Resource):
     )
     def get(self, id):
         """Get a single ride by ID"""
+        # Lazy termination check
+        try:
+            check_and_terminate_rides()
+        except Exception as e:
+            logger.error(f'Termination check failed: {e}')
+        
         ride = Ride.query.get(id)
         if not ride:
             api.abort(404, 'Ride not found')

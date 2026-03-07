@@ -3,7 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import '../../../core/services/osm_search_service.dart';
+import '../../../core/services/location_search_service.dart';
+import '../../../core/services/route_service.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/ride_provider.dart';
@@ -34,52 +35,18 @@ class _FindRideScreenState extends State<FindRideScreen> {
   DateTime? _selectedDate;
   LatLng? _destinationCoordinates;
   bool _isResolvingOrigin = false;
+  bool _hasPerformedSearch = false;
+  List<LatLng> _routePoints = [];
 
   @override
   void initState() {
     super.initState();
-    // Set start location if provided
+    // Clear search results immediately to prevent showing old results
+    context.read<RideProvider>().clearSearch();
+
+    // Set start location if provided - address is already resolved from reverse geocoding
     if (widget.startName != null) {
       _originController.text = widget.startName!;
-
-      // If it's "Current Location", resolve it to a real address
-      if (widget.startName == 'Current Location' &&
-          widget.startCoordinates != null) {
-        _resolveCurrentLocation();
-      }
-    }
-    // Clear previous search results when opening the screen
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RideProvider>().clearSearch();
-    });
-  }
-
-  /// Resolve "Current Location" to a real address using reverse geocoding
-  Future<void> _resolveCurrentLocation() async {
-    if (widget.startCoordinates == null) return;
-
-    setState(() {
-      _isResolvingOrigin = true;
-    });
-
-    try {
-      final address = await OsmSearchService.getAddressFromCoordinates(
-        widget.startCoordinates!,
-      );
-
-      if (mounted) {
-        setState(() {
-          _originController.text = address;
-          _isResolvingOrigin = false;
-        });
-      }
-    } catch (e) {
-      // Keep "Current Location" if resolution fails
-      if (mounted) {
-        setState(() {
-          _isResolvingOrigin = false;
-        });
-      }
     }
   }
 
@@ -146,6 +113,11 @@ class _FindRideScreenState extends State<FindRideScreen> {
     debugPrint(
       '  Destination: ${_destinationCoordinates?.latitude}, ${_destinationCoordinates?.longitude}',
     );
+
+    // Mark that a search has been performed
+    setState(() {
+      _hasPerformedSearch = true;
+    });
 
     await context.read<RideProvider>().performSearch(
       origin: _originController.text.trim().isNotEmpty
@@ -221,13 +193,8 @@ class _FindRideScreenState extends State<FindRideScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Origin Field
-          _buildInputField(
-            controller: _originController,
-            label: 'Leaving from',
-            hint: 'Enter origin city',
-            icon: Icons.location_on_outlined,
-          ),
+          // Origin Field with TypeAhead (now editable)
+          _buildOriginField(),
           const SizedBox(height: 16),
           // Destination Field with TypeAhead
           _buildDestinationField(),
@@ -242,52 +209,108 @@ class _FindRideScreenState extends State<FindRideScreen> {
     );
   }
 
-  Widget _buildInputField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-  }) {
-    return TextField(
-      controller: controller,
-      style: const TextStyle(
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
-        color: BrandColors.black,
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(icon, color: Colors.grey[500], size: 20),
-        filled: true,
-        fillColor: Colors.grey[50],
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[200]!, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: BrandColors.primaryRed, width: 2),
-        ),
-        labelStyle: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: Colors.grey[600],
-        ),
-        hintStyle: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-          color: Colors.grey[400],
-        ),
-      ),
+  /// Origin Field with TypeAhead for editable search
+  Widget _buildOriginField() {
+    return TypeAheadField<Map<String, dynamic>>(
+      controller: _originController,
+      suggestionsCallback: (pattern) async {
+        // Use unified LocationSearchService for consistent autocomplete
+        return await LocationSearchService.searchLocations(
+          query: pattern,
+          currentLocation: widget.startCoordinates,
+          includeCurrentLocation: true,
+        );
+      },
+      builder: (context, controller, focusNode) {
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: BrandColors.black,
+          ),
+          decoration: InputDecoration(
+            labelText: 'From',
+            hintText: 'Enter origin city',
+            prefixIcon: Icon(
+              Icons.location_on_outlined,
+              color: Colors.grey[500],
+              size: 20,
+            ),
+            suffixIcon: controller.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 20),
+                    onPressed: () {
+                      controller.clear();
+                      setState(() {
+                        // Clear origin coordinates when text is cleared
+                      });
+                    },
+                  )
+                : null,
+            filled: true,
+            fillColor: Colors.grey[50],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey[200]!, width: 1),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: BrandColors.primaryRed,
+                width: 2,
+              ),
+            ),
+            labelStyle: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[600],
+            ),
+            hintStyle: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              color: Colors.grey[400],
+            ),
+          ),
+        );
+      },
+      itemBuilder: (context, suggestion) {
+        final isCurrentLocation = LocationSearchService.isCurrentLocationOption(
+          suggestion,
+        );
+        final displayName = LocationSearchService.getDisplayName(suggestion);
+        return ListTile(
+          dense: true,
+          leading: Icon(
+            isCurrentLocation ? Icons.my_location : Icons.location_on,
+            color: isCurrentLocation ? Colors.green : Colors.grey,
+            size: 20,
+          ),
+          title: Text(
+            displayName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14),
+          ),
+        );
+      },
+      onSelected: (suggestion) {
+        setState(() {
+          _originController.text = LocationSearchService.getDisplayName(
+            suggestion,
+          );
+          // Update origin coordinates if needed for route calculation
+        });
+      },
     );
   }
 
@@ -296,8 +319,12 @@ class _FindRideScreenState extends State<FindRideScreen> {
     return TypeAheadField<Map<String, dynamic>>(
       controller: _destinationController,
       suggestionsCallback: (pattern) async {
-        if (pattern.length < 2) return [];
-        return await OsmSearchService.searchPlaces(pattern);
+        // Use unified LocationSearchService for consistent autocomplete
+        return await LocationSearchService.searchLocations(
+          query: pattern,
+          currentLocation: widget.startCoordinates,
+          includeCurrentLocation: true,
+        );
       },
       builder: (context, controller, focusNode) {
         return TextField(
@@ -382,6 +409,8 @@ class _FindRideScreenState extends State<FindRideScreen> {
           // Move map to show the destination
           _mapController.move(_destinationCoordinates!, 13.0);
         });
+        // Calculate route when both points are available
+        _calculateRoute();
       },
     );
   }
@@ -503,7 +532,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
     );
   }
 
-  /// Mini Map Preview with Start and Destination Markers
+  /// Mini Map Preview with Start and Destination Markers and Route
   Widget _buildMapPreview() {
     final markers = <Marker>[];
 
@@ -574,11 +603,50 @@ class _FindRideScreenState extends State<FindRideScreen> {
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.gexpertise.carpooling',
             ),
+            if (_routePoints.isNotEmpty)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: _routePoints,
+                    color: BrandColors.primaryRed.withOpacity(0.7),
+                    strokeWidth: 3,
+                  ),
+                ],
+              ),
             if (markers.isNotEmpty) MarkerLayer(markers: markers),
           ],
         ),
       ),
     );
+  }
+
+  /// Fit camera to show both origin and destination
+  void _fitCameraToBounds() {
+    if (widget.startCoordinates != null && _destinationCoordinates != null) {
+      final bounds = LatLngBounds(
+        widget.startCoordinates!,
+        _destinationCoordinates!,
+      );
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)),
+      );
+    }
+  }
+
+  /// Calculate and display route between origin and destination
+  Future<void> _calculateRoute() async {
+    if (widget.startCoordinates != null && _destinationCoordinates != null) {
+      final result = await RouteService.calculateRoute(
+        widget.startCoordinates!,
+        _destinationCoordinates!,
+      );
+      if (result != null && mounted) {
+        setState(() {
+          _routePoints = result.polylinePoints;
+        });
+        _fitCameraToBounds();
+      }
+    }
   }
 
   Widget _buildResultsList() {
@@ -635,6 +703,10 @@ class _FindRideScreenState extends State<FindRideScreen> {
         }
 
         if (provider.searchResults.isEmpty) {
+          // Only show "No rides found" if a search was actually performed
+          if (!_hasPerformedSearch) {
+            return const SizedBox.shrink(); // Return empty widget before first search
+          }
           return Container(
             height: 300,
             alignment: Alignment.center,

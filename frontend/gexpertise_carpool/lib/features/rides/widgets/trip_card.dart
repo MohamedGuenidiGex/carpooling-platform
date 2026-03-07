@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/features/reservations/providers/reservation_provider.dart';
 import 'package:gexpertise_carpool/core/theme/brand_colors.dart';
+import 'package:gexpertise_carpool/core/services/route_service.dart';
 import 'package:gexpertise_carpool/core/services/websocket_service.dart';
 
 class TripCard extends StatefulWidget {
@@ -46,6 +48,11 @@ class _TripCardState extends State<TripCard>
   StreamSubscription<Position>? _locationStreamSubscription;
   final WebSocketService _wsService = WebSocketService();
 
+  // ETA calculation
+  String? _etaText;
+  LatLng? _driverPosition;
+  final DebouncedRouteCalculator _etaCalculator = DebouncedRouteCalculator();
+
   /// Lifecycle statuses that default to expanded mode
   static const _lifecycleStatuses = {
     'driver_en_route',
@@ -73,6 +80,9 @@ class _TripCardState extends State<TripCard>
     // Start GPS streaming if driver and ride is active
     if (widget.isDriver) {
       _startLocationStreamingIfNeeded();
+    } else {
+      // Passenger: listen for driver location updates via WebSocket
+      _setupDriverLocationListener();
     }
 
     // Start boarding deadline timer for passengers
@@ -83,6 +93,9 @@ class _TripCardState extends State<TripCard>
   void dispose() {
     _boardingDeadlineTimer?.cancel();
     _stopLocationStreaming();
+    if (!widget.isDriver) {
+      _wsService.off('driver_location_updated');
+    }
     _animController.dispose();
     super.dispose();
   }
@@ -772,6 +785,10 @@ class _TripCardState extends State<TripCard>
       return;
     }
 
+    // Update driver position for ETA calculation
+    _driverPosition = LatLng(position.latitude, position.longitude);
+    _calculateETA();
+
     _wsService.sendDriverLocationUpdate(
       rideId: currentRide.id!,
       lat: position.latitude,
@@ -783,6 +800,84 @@ class _TripCardState extends State<TripCard>
       'TripCard: Sent driver location update: '
       '(${position.latitude}, ${position.longitude})',
     );
+  }
+
+  /// Setup WebSocket listener for driver location updates (passenger only)
+  void _setupDriverLocationListener() {
+    if (currentRide.id == null) return;
+
+    _wsService.on('driver_location_updated', (data) {
+      if (!mounted) return;
+      if (data is! Map) return;
+
+      final rideId = data['ride_id'];
+      if (rideId != currentRide.id) return;
+
+      final lat = data['lat'];
+      final lng = data['lng'];
+      if (lat == null || lng == null) return;
+
+      _driverPosition = LatLng(
+        (lat as num).toDouble(),
+        (lng as num).toDouble(),
+      );
+
+      _calculateETA();
+    });
+  }
+
+  /// Calculate ETA based on current driver position and ride status
+  Future<void> _calculateETA() async {
+    if (_driverPosition == null) return;
+
+    final status = currentRide.status?.toLowerCase() ?? '';
+    LatLng? destination;
+
+    if (status == 'driver_en_route') {
+      // ETA to pickup (origin)
+      if (currentRide.originLat != null && currentRide.originLng != null) {
+        destination = LatLng(currentRide.originLat!, currentRide.originLng!);
+      }
+    } else if (status == 'in_progress') {
+      // ETA to destination
+      if (currentRide.destinationLat != null &&
+          currentRide.destinationLng != null) {
+        destination = LatLng(
+          currentRide.destinationLat!,
+          currentRide.destinationLng!,
+        );
+      }
+    } else {
+      // No ETA for other statuses
+      if (_etaText != null && mounted) {
+        setState(() => _etaText = null);
+      }
+      return;
+    }
+
+    if (destination == null) {
+      if (mounted) setState(() => _etaText = 'Unavailable');
+      return;
+    }
+
+    // Use debounced calculator to prevent excessive API calls
+    final result = await _etaCalculator.calculateIfNeeded(
+      _driverPosition!,
+      destination,
+    );
+
+    if (result != null && mounted) {
+      setState(() => _etaText = result.formattedDuration);
+    } else if (_etaText == null && mounted) {
+      // First attempt returned null (debounce), force calculate
+      final forced = await _etaCalculator.forceCalculate(
+        _driverPosition!,
+        destination,
+      );
+      if (mounted) {
+        setState(() => _etaText = forced?.formattedDuration ?? 'Unavailable');
+      }
+    }
   }
 
   /// Show dialog when location permission is denied
@@ -1026,6 +1121,10 @@ class _TripCardState extends State<TripCard>
                           ),
                           const SizedBox(height: 18),
 
+                          // ETA Display for both drivers and passengers during active ride phases
+                          _buildETASection(),
+
+                          const SizedBox(height: 18),
                           // Primary Action Button (Driver actions)
                           if (_isDriverAction())
                             SizedBox(
@@ -1160,6 +1259,75 @@ class _TripCardState extends State<TripCard>
           ),
         );
       },
+    );
+  }
+
+  /// Build ETA section for both drivers and passengers during active ride phases
+  Widget _buildETASection() {
+    final status = currentRide.status?.toLowerCase() ?? '';
+
+    String etaLabel;
+
+    switch (status) {
+      case 'driver_en_route':
+        etaLabel = 'ETA to pickup';
+        break;
+      case 'arrived':
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.purple.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.location_on, color: Colors.purple[700], size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Driver arrived at pickup location',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.purple[700],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      case 'in_progress':
+        etaLabel = 'ETA to destination';
+        break;
+      default:
+        return const SizedBox.shrink();
+    }
+
+    // Use real ETA text from calculation, with fallback
+    final displayEta = _etaText ?? 'Calculating...';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: BrandColors.primaryRed.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.access_time, color: BrandColors.primaryRed, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$etaLabel: $displayEta',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: BrandColors.primaryRed,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
