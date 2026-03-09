@@ -161,26 +161,51 @@ class _EmptyState extends StatelessWidget {
 ///
 /// Displays a single notification with icon, message, and time.
 /// Unread notifications have a light red background.
-class _NotificationCard extends StatelessWidget {
+/// Supports tap-to-expand for long messages.
+class _NotificationCard extends StatefulWidget {
   final NotificationModel notification;
 
   const _NotificationCard({required this.notification});
 
   @override
+  State<_NotificationCard> createState() => _NotificationCardState();
+}
+
+class _NotificationCardState extends State<_NotificationCard> {
+  bool _isExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final type = notification.notificationType;
+    final type = widget.notification.notificationType;
+    final isLongMessage = widget.notification.message.length > 100;
 
     return GestureDetector(
-      onTap: () => _handleTap(context),
+      onTap: () {
+        if (isLongMessage) {
+          // Long messages: first tap expands, second tap navigates
+          if (_isExpanded) {
+            _handleNavigation(context);
+          } else {
+            setState(() {
+              _isExpanded = true;
+            });
+          }
+        } else {
+          // Short messages: tap navigates immediately
+          _handleNavigation(context);
+        }
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           // Unread notifications have light red background
-          color: notification.isRead ? Colors.white : Colors.red[50],
+          color: widget.notification.isRead ? Colors.white : Colors.red[50],
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: notification.isRead ? Colors.grey[200]! : Colors.red[100]!,
+            color: widget.notification.isRead
+                ? Colors.grey[200]!
+                : Colors.red[100]!,
           ),
         ),
         child: Row(
@@ -204,7 +229,7 @@ class _NotificationCard extends StatelessWidget {
                 children: [
                   // Type label as title
                   Text(
-                    _getTypeLabel(notification.type),
+                    _getTypeLabel(widget.notification.type),
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -212,24 +237,39 @@ class _NotificationCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    notification.message,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                      height: 1.4,
+                  // Expandable message text with smooth animation
+                  AnimatedCrossFade(
+                    firstChild: Text(
+                      widget.notification.message,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        height: 1.4,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    secondChild: Text(
+                      widget.notification.message,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        height: 1.4,
+                      ),
+                    ),
+                    crossFadeState: _isExpanded
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    duration: const Duration(milliseconds: 200),
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
                       Text(
-                        _formatTime(notification.createdAt),
+                        _formatTime(widget.notification.createdAt),
                         style: TextStyle(fontSize: 12, color: Colors.grey[400]),
                       ),
-                      if (!notification.isRead) ...[
+                      if (!widget.notification.isRead) ...[
                         const SizedBox(width: 8),
                         Container(
                           width: 8,
@@ -238,6 +278,17 @@ class _NotificationCard extends StatelessWidget {
                             color: BrandColors.primaryRed,
                             shape: BoxShape.circle,
                           ),
+                        ),
+                      ],
+                      // Show expand/collapse indicator for long messages
+                      if (isLongMessage) ...[
+                        const Spacer(),
+                        Icon(
+                          _isExpanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          size: 18,
+                          color: Colors.grey[400],
                         ),
                       ],
                     ],
@@ -249,6 +300,34 @@ class _NotificationCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Handle navigation to ride details or history
+  Future<void> _handleNavigation(BuildContext context) async {
+    // Mark as read
+    await context.read<NotificationProvider>().markAsRead(
+      widget.notification.id,
+    );
+
+    // Navigate based on notification type
+    if (widget.notification.rideId != null) {
+      if (widget.notification.type == 'request') {
+        // Driver received a request - go to RideDetails to approve/reject
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                RideDetailsScreen(rideId: widget.notification.rideId!),
+          ),
+        );
+      } else if (widget.notification.type == 'approval') {
+        // Passenger's request was approved - go to Booked Rides
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const HistoryScreen()),
+        );
+      }
+    }
   }
 
   String _getTypeLabel(String type) {
@@ -263,31 +342,6 @@ class _NotificationCard extends StatelessWidget {
         return 'Ride Cancelled';
       default:
         return 'Notification';
-    }
-  }
-
-  Future<void> _handleTap(BuildContext context) async {
-    // Mark as read
-    await context.read<NotificationProvider>().markAsRead(notification.id);
-
-    // Navigate based on notification type
-    if (notification.rideId != null) {
-      if (notification.type == 'request') {
-        // Driver received a request - go to RideDetails to approve/reject
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                RideDetailsScreen(rideId: notification.rideId!),
-          ),
-        );
-      } else if (notification.type == 'approval') {
-        // Passenger's request was approved - go to Booked Rides
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const HistoryScreen()),
-        );
-      }
     }
   }
 

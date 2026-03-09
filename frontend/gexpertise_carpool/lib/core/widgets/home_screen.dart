@@ -158,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           currentUserId: currentUserId!,
           isDriver: activeRide!.driverId == currentUserId,
           onRideCompleted: _handleRideCompleted,
+          onTogglePlanMode: () {}, // Not used in legacy home screen
         ),
       );
     }

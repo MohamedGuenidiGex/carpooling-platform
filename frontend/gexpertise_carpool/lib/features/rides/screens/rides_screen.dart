@@ -26,6 +26,9 @@ import 'create_ride_screen.dart';
 /// Search mode enum for unified search experience
 enum SearchMode { none, passenger, driver }
 
+/// View mode enum for ride screen when active ride exists
+enum ViewMode { currentRide, planNextRide }
+
 /// Rides Screen - Map-First Home Dashboard with Unified Search
 ///
 /// Uber/InDrive-style layout with map background, floating controls,
@@ -60,6 +63,9 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   int? _currentUserId;
   final WebSocketService _wsService = WebSocketService();
   Timer? _rideCheckTimer;
+
+  // View mode state (only relevant when active ride exists)
+  ViewMode _viewMode = ViewMode.currentRide;
 
   @override
   void initState() {
@@ -249,13 +255,25 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Toggle between Current Ride and Plan Next Ride modes
+  void _toggleViewMode() {
+    setState(() {
+      _viewMode = _viewMode == ViewMode.currentRide
+          ? ViewMode.planNextRide
+          : ViewMode.currentRide;
+    });
+  }
+
+  /// Handle ride completion - dismiss sheet and refresh
   void _handleRideCompleted() {
-    if (mounted) {
-      setState(() {
-        _activeRide = null;
-        _sheetVisible = false;
-      });
-    }
+    setState(() {
+      _activeRide = null;
+      _activeReservationId = null;
+      _activeBoardingDeadline = null;
+      _sheetVisible = false;
+      _viewMode = ViewMode.currentRide; // Reset to default mode
+    });
+    _refreshActiveRide(); // Fetch latest state
   }
 
   void _startNotificationPolling() {
@@ -579,13 +597,17 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final bool hasActiveRide = _activeRide != null && _currentUserId != null;
+    final bool showCurrentRideMode =
+        hasActiveRide && _viewMode == ViewMode.currentRide;
+    final bool showPlanNextRideMode =
+        hasActiveRide && _viewMode == ViewMode.planNextRide;
 
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: const GExpertiseDrawer(),
       body: Stack(
         children: [
-          // Layer 1: Map Background (always visible)
+          // Layer 1: Map Background (base layer)
           _MapBackground(
             mapController: _mapController,
             currentPosition: _currentPosition,
@@ -598,7 +620,49 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
             selectedLocation: _selectedLocation,
           ),
 
-          // Layer 2: Integrated Search Bar with Menu (Top)
+          // Layer 2: Bottom sheets (above map)
+          // 2a: Bottom action panel (visible when NO active ride OR in Plan Next Ride mode)
+          if (!hasActiveRide || showPlanNextRideMode)
+            _BottomActionPanel(
+              onFindRide: _startPassengerSearch,
+              onOfferRide: _startDriverSearch,
+              activeRide: showPlanNextRideMode ? _activeRide : null,
+              isDriver:
+                  showPlanNextRideMode &&
+                  _activeRide!.driverId == _currentUserId,
+              onToggleMode: hasActiveRide ? _toggleViewMode : null,
+            ),
+
+          // 2b: TripCard bottom sheet (visible in Current Ride mode)
+          if (showCurrentRideMode)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutCubic,
+                offset: _sheetVisible ? Offset.zero : const Offset(0, 1),
+                child: TripCard(
+                  activeRide: _activeRide!,
+                  currentUserId: _currentUserId!,
+                  isDriver: _activeRide!.driverId == _currentUserId,
+                  onRideCompleted: _handleRideCompleted,
+                  reservationId: _activeReservationId,
+                  boardingDeadline: _activeBoardingDeadline,
+                  onTogglePlanMode: _toggleViewMode,
+                ),
+              ),
+            ),
+
+          // Layer 3: Current Location Button (elevated above bottom panel)
+          // Positioned just above bottom panel with minimal clearance
+          _CurrentLocationButton(
+            onPressed: _goToCurrentLocation,
+            bottomOffset: hasActiveRide ? 350 : 200,
+          ),
+
+          // Layer 5: Search Bar (always visible at top)
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -611,39 +675,6 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-
-          // Layer 3: Current Location Button (Bottom Right, above panels)
-          _CurrentLocationButton(
-            onPressed: _goToCurrentLocation,
-            bottomOffset: hasActiveRide ? 280 : 200,
-          ),
-
-          // Layer 4: Bottom action panel (always visible)
-          _BottomActionPanel(
-            onFindRide: _startPassengerSearch,
-            onOfferRide: _startDriverSearch,
-          ),
-
-          // Layer 5: TripCard bottom sheet (above action panel when active)
-          if (hasActiveRide)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 160, // Above the action panel
-              child: AnimatedSlide(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                offset: _sheetVisible ? Offset.zero : const Offset(0, 1),
-                child: TripCard(
-                  activeRide: _activeRide!,
-                  currentUserId: _currentUserId!,
-                  isDriver: _activeRide!.driverId == _currentUserId,
-                  onRideCompleted: _handleRideCompleted,
-                  reservationId: _activeReservationId,
-                  boardingDeadline: _activeBoardingDeadline,
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -695,6 +726,10 @@ class _MapBackgroundState extends State<_MapBackground>
   String? _currentETA;
   final DebouncedRouteCalculator _etaCalculator = DebouncedRouteCalculator();
 
+  // Route visualization state
+  List<LatLng> _routePoints = [];
+  final DebouncedRouteCalculator _routeCalculator = DebouncedRouteCalculator();
+
   @override
   void initState() {
     super.initState();
@@ -708,7 +743,8 @@ class _MapBackgroundState extends State<_MapBackground>
     });
   }
 
-  /// Initialize driver position for passengers using ride origin as fallback
+  /// Initialize driver position for passengers
+  /// Driver position will be set by WebSocket updates only
   void _initializeDriverPosition() {
     // Only for passengers with active rides
     if (widget.isDriver || widget.activeRide == null) return;
@@ -719,23 +755,11 @@ class _MapBackgroundState extends State<_MapBackground>
 
     if (!isActiveStatus) return;
 
-    // Use ride origin as initial driver position
-    if (widget.activeRide!.originLat != null &&
-        widget.activeRide!.originLng != null) {
-      setState(() {
-        _currentDriverPosition = LatLng(
-          widget.activeRide!.originLat!,
-          widget.activeRide!.originLng!,
-        );
-      });
-      debugPrint(
-        'RidesScreen: Initialized driver position with ride origin: '
-        '(${widget.activeRide!.originLat}, ${widget.activeRide!.originLng})',
-      );
-
-      // Trigger initial ETA calculation
-      _updateETA();
-    }
+    // Driver position will be set when first WebSocket update arrives
+    // Do not use ride origin as fallback - it's the pickup location, not driver location
+    debugPrint(
+      'RidesScreen: Waiting for driver location updates via WebSocket for ride ${widget.activeRide!.id}',
+    );
   }
 
   @override
@@ -842,19 +866,27 @@ class _MapBackgroundState extends State<_MapBackground>
       _hasInitiallyFramed = false;
       _animController?.dispose();
       _animController = null;
+      _routePoints = [];
 
-      // Initialize position for new ride
+      // Initialize position and route for new ride
       _initializeDriverPosition();
+      _calculateRouteForActiveRide();
     }
 
-    // Clear driver position when ride completes
+    // Recalculate route if ride status changes
     final oldStatus = oldWidget.activeRide?.status?.toLowerCase() ?? '';
     final newStatus = widget.activeRide?.status?.toLowerCase() ?? '';
+    if (oldStatus != newStatus) {
+      _calculateRouteForActiveRide();
+    }
+
+    // Clear driver position and route when ride completes
     if ((oldStatus == 'driver_en_route' || oldStatus == 'in_progress') &&
         (newStatus == 'completed' || newStatus == 'cancelled')) {
       setState(() {
         _currentDriverPosition = null;
         _targetDriverPosition = null;
+        _routePoints = [];
       });
     }
   }
@@ -893,15 +925,20 @@ class _MapBackgroundState extends State<_MapBackground>
         if (_currentDriverPosition == null) {
           // First update - set immediately
           _currentDriverPosition = newPosition;
-
-          // Frame camera to include driver, pickup, and destination
-          if (!_hasInitiallyFramed && widget.activeRide != null) {
-            _frameInitialView();
-            _hasInitiallyFramed = true;
-          }
         } else {
           // Animate from current to target
           _animateMarker();
+        }
+      });
+
+      // Update route when driver position changes
+      _calculateRouteForActiveRide().then((_) {
+        // Frame camera after route is calculated on first update
+        if (!_hasInitiallyFramed &&
+            widget.activeRide != null &&
+            _currentDriverPosition != null) {
+          _fitCameraToRoute();
+          _hasInitiallyFramed = true;
         }
       });
 
@@ -943,7 +980,69 @@ class _MapBackgroundState extends State<_MapBackground>
     _animController!.forward();
   }
 
-  void _frameInitialView() {
+  /// Calculate and display route for active ride based on status
+  Future<void> _calculateRouteForActiveRide() async {
+    if (widget.activeRide == null) return;
+
+    final status = widget.activeRide!.status?.toLowerCase() ?? '';
+
+    // Only calculate route for active statuses
+    if (status != 'driver_en_route' && status != 'in_progress') {
+      setState(() => _routePoints = []);
+      return;
+    }
+
+    LatLng? from;
+    LatLng? to;
+
+    // Determine route endpoints based on status
+    if (status == 'driver_en_route') {
+      // Route from driver to pickup location
+      from = _currentDriverPosition;
+      if (widget.activeRide!.originLat != null &&
+          widget.activeRide!.originLng != null) {
+        to = LatLng(
+          widget.activeRide!.originLat!,
+          widget.activeRide!.originLng!,
+        );
+      }
+    } else if (status == 'in_progress') {
+      // Route from driver to destination
+      from = _currentDriverPosition;
+      if (widget.activeRide!.destinationLat != null &&
+          widget.activeRide!.destinationLng != null) {
+        to = LatLng(
+          widget.activeRide!.destinationLat!,
+          widget.activeRide!.destinationLng!,
+        );
+      }
+    }
+
+    if (from == null || to == null) {
+      debugPrint(
+        'RidesScreen: Cannot calculate route - missing coordinates. '
+        'Driver position: $from, Destination: $to',
+      );
+      return;
+    }
+
+    debugPrint('RidesScreen: Calculating route from ($from) to ($to)');
+
+    // Use debounced calculator to prevent excessive API calls
+    final result = await _routeCalculator.calculateIfNeeded(from, to);
+
+    if (result != null && mounted) {
+      setState(() {
+        _routePoints = result.polylinePoints;
+      });
+      debugPrint(
+        'RidesScreen: Route calculated with ${result.polylinePoints.length} points',
+      );
+    }
+  }
+
+  /// Fit camera to show the full route with all relevant markers
+  void _fitCameraToRoute() {
     if (widget.activeRide == null) return;
 
     final List<LatLng> points = [];
@@ -987,20 +1086,53 @@ class _MapBackgroundState extends State<_MapBackground>
       if (point.longitude > maxLng) maxLng = point.longitude;
     }
 
-    // Add padding
-    final double latPadding = (maxLat - minLat) * 0.2;
-    final double lngPadding = (maxLng - minLng) * 0.2;
+    // Add padding - increased for better visibility
+    final double latPadding = (maxLat - minLat) * 0.3;
+    final double lngPadding = (maxLng - minLng) * 0.3;
 
     final LatLng sw = LatLng(minLat - latPadding, minLng - lngPadding);
     final LatLng ne = LatLng(maxLat + latPadding, maxLng + lngPadding);
 
-    // Fit bounds
+    // Fit bounds with extra padding for driver info panel
     widget.mapController.fitCamera(
       CameraFit.bounds(
         bounds: LatLngBounds(sw, ne),
-        padding: const EdgeInsets.all(50),
+        padding: const EdgeInsets.only(
+          left: 50,
+          right: 50,
+          top: 250, // Extra top padding to accommodate driver info panel
+          bottom: 100,
+        ),
       ),
     );
+  }
+
+  /// Ensure driver info panel is fully visible by adjusting map camera
+  void _ensureDriverInfoVisible() {
+    if (_currentDriverPosition == null) return;
+
+    // Small delay to allow panel animation to start
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+
+      // Pan map slightly to ensure driver marker and panel are visible
+      // The panel is 200px tall (marker height in MarkerLayer)
+      // We need to ensure the driver position is not too close to top edge
+
+      final currentZoom = widget.mapController.camera.zoom;
+
+      // Calculate offset to move driver marker down slightly if needed
+      // This ensures the panel above it remains visible
+      final latOffset =
+          0.002 * (15.0 / currentZoom); // Adjust based on zoom level
+
+      final newCenter = LatLng(
+        _currentDriverPosition!.latitude - latOffset,
+        _currentDriverPosition!.longitude,
+      );
+
+      widget.mapController.move(newCenter, currentZoom);
+    });
   }
 
   @override
@@ -1029,6 +1161,17 @@ class _MapBackgroundState extends State<_MapBackground>
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.gexpertise.carpool',
             ),
+            // Route polyline for active rides (same styling as Offer Ride and Find Ride screens)
+            if (_routePoints.isNotEmpty)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: _routePoints,
+                    color: BrandColors.primaryRed.withOpacity(0.7),
+                    strokeWidth: 3,
+                  ),
+                ],
+              ),
             // Selected location marker (from map tap)
             if (widget.selectedLocation != null)
               MarkerLayer(
@@ -1123,7 +1266,10 @@ class _MapBackgroundState extends State<_MapBackground>
                     child: GestureDetector(
                       onTap: () {
                         setState(() => _showDriverInfo = !_showDriverInfo);
-                        if (_showDriverInfo) _forceETAUpdate();
+                        if (_showDriverInfo) {
+                          _forceETAUpdate();
+                          _ensureDriverInfoVisible();
+                        }
                       },
                       child: Stack(
                         clipBehavior: Clip.none,
@@ -1406,17 +1552,40 @@ class _CurrentLocationButton extends StatelessWidget {
 /// Bottom Action Panel (Positioned)
 ///
 /// White panel pinned to bottom using Positioned widget.
+/// Shows compact ride info when in Plan Next Ride mode.
 class _BottomActionPanel extends StatelessWidget {
   final VoidCallback onFindRide;
   final VoidCallback onOfferRide;
+  final Ride? activeRide;
+  final bool isDriver;
+  final VoidCallback? onToggleMode;
 
   const _BottomActionPanel({
     required this.onFindRide,
     required this.onOfferRide,
+    this.activeRide,
+    this.isDriver = false,
+    this.onToggleMode,
   });
+
+  String _shortAddress(String? address) {
+    if (address == null || address.isEmpty) return '';
+    final parts = address.split(',');
+    return parts.first.trim();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final hasActiveRide = activeRide != null;
+    final status = hasActiveRide ? normalizeStatus(activeRide!.status) : '';
+    final statusLabel = status == 'driver_en_route'
+        ? 'Driver En Route'
+        : status == 'in_progress'
+        ? 'In Progress'
+        : status == 'arrived'
+        ? 'Arrived'
+        : 'Active';
+
     return Positioned(
       left: 0,
       right: 0,
@@ -1430,17 +1599,17 @@ class _BottomActionPanel extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withOpacity(0.12),
               blurRadius: 24,
               offset: const Offset(0, -4),
-              spreadRadius: -4,
+              spreadRadius: 0,
             ),
           ],
         ),
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1455,7 +1624,88 @@ class _BottomActionPanel extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
+
+                // Compact ride info card (only when in Plan Next Ride mode)
+                if (hasActiveRide) ...[
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onToggleMode,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFFEEEEEE),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFE6E6), // Soft red tint
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.directions_car,
+                                color: Color(0xFFD6001C), // Brand red
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Current Ride ($statusLabel)',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[600],
+                                      letterSpacing: 0.1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_shortAddress(activeRide!.origin)} → ${_shortAddress(activeRide!.destination)}',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                      letterSpacing: 0.1,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right,
+                              color: Colors.grey[400],
+                              size: 24,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // Find a Ride Button
                 _ActionButton(
@@ -1463,7 +1713,7 @@ class _BottomActionPanel extends StatelessWidget {
                   icon: Icons.search,
                   onPressed: onFindRide,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
                 // Offer a Ride Button
                 _ActionButton(

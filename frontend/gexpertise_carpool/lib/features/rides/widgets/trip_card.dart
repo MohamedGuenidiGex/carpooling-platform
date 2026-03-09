@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:gexpertise_carpool/features/rides/models/ride_model.dart';
 import 'package:gexpertise_carpool/features/rides/providers/ride_provider.dart';
 import 'package:gexpertise_carpool/features/reservations/providers/reservation_provider.dart';
@@ -16,6 +17,7 @@ class TripCard extends StatefulWidget {
   final int currentUserId;
   final bool isDriver;
   final VoidCallback onRideCompleted;
+  final VoidCallback onTogglePlanMode;
   final int?
   reservationId; // Passenger's reservation ID for boarding confirmation
   final DateTime? boardingDeadline; // Boarding deadline for passenger
@@ -25,6 +27,7 @@ class TripCard extends StatefulWidget {
     required this.currentUserId,
     required this.isDriver,
     required this.onRideCompleted,
+    required this.onTogglePlanMode,
     this.reservationId,
     this.boardingDeadline,
     Key? key,
@@ -598,6 +601,94 @@ class _TripCardState extends State<TripCard>
         status != 'missed';
   }
 
+  /// Check if driver should see navigation button
+  /// Only show during active ride states: driver_en_route or in_progress
+  bool _shouldShowNavigationButton() {
+    if (!widget.isDriver) return false;
+
+    final status = currentRide.status?.toLowerCase() ?? 'scheduled';
+    return status == 'driver_en_route' || status == 'in_progress';
+  }
+
+  /// Open Google Maps navigation
+  /// - If driver_en_route: navigate to pickup location
+  /// - If in_progress: navigate to destination
+  /// - Origin: driver's current GPS location
+  Future<void> _openGoogleMapsNavigation() async {
+    final ride = currentRide;
+    final status = ride.status?.toLowerCase() ?? '';
+
+    // Determine destination based on ride state
+    double? destLat;
+    double? destLng;
+
+    if (status == 'driver_en_route') {
+      // Navigate to pickup location
+      if (ride.originLat == null || ride.originLng == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pickup location coordinates not available'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      destLat = ride.originLat;
+      destLng = ride.originLng;
+    } else if (status == 'in_progress') {
+      // Navigate to final destination
+      if (ride.destinationLat == null || ride.destinationLng == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Destination coordinates not available'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      destLat = ride.destinationLat;
+      destLng = ride.destinationLng;
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Navigation not available for current ride state'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Build Google Maps URL with only destination (next ride objective)
+    // Google Maps will automatically use the phone's GPS location as origin
+    // Format: https://www.google.com/maps/dir/?api=1&destination=lat,lng&travelmode=driving
+    final url = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$destLat,$destLng&travelmode=driving',
+    );
+
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        // Fallback to generic maps URL
+        final fallbackUrl = Uri.parse(
+          'https://www.google.com/maps/search/?api=1&query=$destLat,$destLng',
+        );
+        if (await canLaunchUrl(fallbackUrl)) {
+          await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+        } else {
+          throw Exception('Could not open Google Maps');
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to open navigation: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   /// Schedule auto-dismiss of TripCard when boarding deadline expires (passenger only)
   void _setupBoardingDeadlineTimer() {
     // Only for passengers with a boarding deadline who haven't confirmed
@@ -1052,69 +1143,123 @@ class _TripCardState extends State<TripCard>
                           const Divider(height: 1),
                           const SizedBox(height: 14),
 
-                          // Full route: Origin → Destination
+                          // Route section with Plan Next button centered on right
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: BrandColors.primaryRed,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: BrandColors.primaryRed.withOpacity(
-                                      0.3,
+                              // Route info column
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          color: BrandColors.primaryRed,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: BrandColors.primaryRed
+                                                .withOpacity(0.3),
+                                            width: 2,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        _shortAddress(currentRide.origin),
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Container(
+                                      width: 2,
+                                      height: 20,
+                                      color: Colors.grey[300],
                                     ),
-                                    width: 2,
                                   ),
-                                ),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          color: Colors.green,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Colors.green.withOpacity(
+                                              0.3,
+                                            ),
+                                            width: 2,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        _shortAddress(currentRide.destination),
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 10),
+                              // Plan Next button (aligned to right edge)
                               Expanded(
-                                child: Text(
-                                  _shortAddress(currentRide.origin),
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: widget.onTogglePlanMode,
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: BrandColors.primaryRed
+                                                .withOpacity(0.3),
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.add_circle_outline,
+                                              size: 16,
+                                              color: BrandColors.primaryRed,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Plan Next',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: BrandColors.primaryRed,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: Container(
-                              width: 2,
-                              height: 20,
-                              color: Colors.grey[300],
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.green.withOpacity(0.3),
-                                    width: 2,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _shortAddress(currentRide.destination),
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -1124,7 +1269,7 @@ class _TripCardState extends State<TripCard>
                           // ETA Display for both drivers and passengers during active ride phases
                           _buildETASection(),
 
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 16),
                           // Primary Action Button (Driver actions)
                           if (_isDriverAction())
                             SizedBox(
@@ -1179,6 +1324,40 @@ class _TripCardState extends State<TripCard>
                                       ),
                               ),
                             ),
+
+                          // Google Maps Navigation Button (Driver only, during active ride)
+                          if (_shouldShowNavigationButton()) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _openGoogleMapsNavigation,
+                                icon: const Icon(Icons.navigation, size: 16),
+                                label: const Text(
+                                  'Navigate with Google Maps',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: BrandColors.primaryRed,
+                                  side: const BorderSide(
+                                    color: BrandColors.primaryRed,
+                                    width: 1.5,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 11,
+                                    horizontal: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
 
                           // Passenger Boarding Confirmation Button
                           if (_isPassengerBoardingAction())

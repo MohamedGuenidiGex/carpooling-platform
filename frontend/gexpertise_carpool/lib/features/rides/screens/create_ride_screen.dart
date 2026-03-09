@@ -4,6 +4,7 @@ import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../../../core/services/location_search_service.dart';
+import '../../../core/services/osm_search_service.dart';
 import '../../../core/services/route_service.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../providers/ride_provider.dart';
@@ -37,6 +38,8 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
   LatLng? _originCoordinates;
   LatLng? _destinationCoordinates;
   List<LatLng> _routePoints = [];
+  String?
+  _userCountryCode; // Detected from GPS for country-based search filtering
 
   @override
   void initState() {
@@ -45,6 +48,11 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     if (widget.startName != null) {
       _originController.text = widget.startName!;
       _originCoordinates = widget.startCoordinates;
+    }
+
+    // Detect user's country from start coordinates for search filtering
+    if (widget.startCoordinates != null) {
+      _detectUserCountry(widget.startCoordinates!);
     }
   }
 
@@ -57,6 +65,21 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     _commentsController.dispose();
     _mapController.dispose();
     super.dispose();
+  }
+
+  /// Detect user's country from GPS coordinates for search filtering
+  Future<void> _detectUserCountry(LatLng coordinates) async {
+    try {
+      final countryCode = await OsmSearchService.detectCountryCode(coordinates);
+      if (mounted && countryCode != null) {
+        setState(() {
+          _userCountryCode = countryCode;
+        });
+        debugPrint('CreateRideScreen: Detected user country: $countryCode');
+      }
+    } catch (e) {
+      debugPrint('CreateRideScreen: Failed to detect country: $e');
+    }
   }
 
   Future<void> _pickDate() async {
@@ -375,6 +398,7 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
         return await LocationSearchService.searchLocations(
           query: pattern,
           currentLocation: widget.startCoordinates,
+          userCountryCode: _userCountryCode,
           includeCurrentLocation: true,
         );
       },
@@ -478,6 +502,7 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
         return await LocationSearchService.searchLocations(
           query: pattern,
           currentLocation: _originCoordinates ?? widget.startCoordinates,
+          userCountryCode: _userCountryCode,
           includeCurrentLocation: true,
         );
       },

@@ -101,7 +101,8 @@ class OsmSearchService {
     }
 
     try {
-      // STRATEGY 1: Try with country filter first (prioritizes local results)
+      // STRICT COUNTRY FILTERING: Only return results from user's country
+      // No fallback to global search to prevent unrelated countries from appearing
       var queryParams = {
         ...baseParams,
         'countrycodes': validCountryCode,
@@ -123,26 +124,7 @@ class OsmSearchService {
         apiResults = json.decode(response.body);
       }
 
-      // STRATEGY 2: If no results with country filter, try global search
-      if (apiResults.isEmpty) {
-        queryParams = {
-          ...baseParams,
-          if (viewboxParams != null) ...viewboxParams,
-        };
-
-        urlBuilder = Uri.parse(
-          '$_baseUrl/search',
-        ).replace(queryParameters: queryParams);
-
-        response = await http.get(
-          urlBuilder,
-          headers: {'User-Agent': _userAgent, 'Accept-Language': 'fr,en'},
-        );
-
-        if (response.statusCode == 200) {
-          apiResults = json.decode(response.body);
-        }
-      }
+      // No fallback to global search - enforce country restriction
 
       // Parse and return results
       if (apiResults.isNotEmpty) {
