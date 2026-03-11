@@ -21,6 +21,8 @@ class TripCard extends StatefulWidget {
   final int?
   reservationId; // Passenger's reservation ID for boarding confirmation
   final DateTime? boardingDeadline; // Boarding deadline for passenger
+  final Function(LatLng)?
+  onDriverPositionUpdate; // Callback to sync driver position to parent
 
   const TripCard({
     required this.activeRide,
@@ -30,6 +32,7 @@ class TripCard extends StatefulWidget {
     required this.onTogglePlanMode,
     this.reservationId,
     this.boardingDeadline,
+    this.onDriverPositionUpdate,
     Key? key,
   }) : super(key: key);
 
@@ -953,6 +956,11 @@ class _TripCardState extends State<TripCard>
     // Update driver position for ETA calculation
     _driverPosition = LatLng(position.latitude, position.longitude);
     _calculateETA();
+
+    // Notify parent (RidesScreen) of driver position update for map display
+    if (widget.onDriverPositionUpdate != null) {
+      widget.onDriverPositionUpdate!(_driverPosition!);
+    }
 
     debugPrint(
       'TripCard: Sending driver location update via WebSocket - '

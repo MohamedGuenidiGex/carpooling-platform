@@ -67,6 +67,16 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   // View mode state (only relevant when active ride exists)
   ViewMode _viewMode = ViewMode.currentRide;
 
+  // Driver position tracking (for map display)
+  LatLng? _driverPosition;
+
+  /// Handle driver position updates from TripCard
+  void _onDriverPositionUpdate(LatLng position) {
+    setState(() {
+      _driverPosition = position;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -618,6 +628,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
             wsService: _wsService,
             onTap: _onMapTapped,
             selectedLocation: _selectedLocation,
+            driverPosition: _driverPosition,
           ),
 
           // Layer 2: Bottom sheets (above map)
@@ -651,6 +662,7 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
                   reservationId: _activeReservationId,
                   boardingDeadline: _activeBoardingDeadline,
                   onTogglePlanMode: _toggleViewMode,
+                  onDriverPositionUpdate: _onDriverPositionUpdate,
                 ),
               ),
             ),
@@ -695,6 +707,8 @@ class _MapBackground extends StatefulWidget {
   final WebSocketService wsService;
   final Function(LatLng)? onTap;
   final LatLng? selectedLocation;
+  final LatLng?
+  driverPosition; // Driver position from TripCard (for driver role)
 
   const _MapBackground({
     required this.mapController,
@@ -705,6 +719,7 @@ class _MapBackground extends StatefulWidget {
     required this.wsService,
     this.onTap,
     this.selectedLocation,
+    this.driverPosition,
   });
 
   @override
@@ -732,6 +747,9 @@ class _MapBackgroundState extends State<_MapBackground>
 
   // Named callback reference so dispose only removes this widget's listener
   Function(dynamic)? _locationUpdateCallback;
+
+  // Track if we've done initial camera framing
+  bool _hasFramedInitialPosition = false;
 
   @override
   void initState() {
@@ -864,14 +882,50 @@ class _MapBackgroundState extends State<_MapBackground>
   void didUpdateWidget(_MapBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    // Handle driver position updates from parent (for driver role)
+    if (widget.isDriver && widget.driverPosition != null) {
+      if (widget.driverPosition != oldWidget.driverPosition) {
+        debugPrint(
+          'RidesScreen: Driver position update from parent: (${widget.driverPosition!.latitude}, ${widget.driverPosition!.longitude})',
+        );
+
+        setState(() {
+          if (_currentDriverPosition == null) {
+            // First position - set immediately
+            _currentDriverPosition = widget.driverPosition;
+            _targetDriverPosition = widget.driverPosition;
+            debugPrint(
+              'RidesScreen: First driver position set for driver role',
+            );
+          } else {
+            // Update target and animate
+            _targetDriverPosition = widget.driverPosition;
+            _animateMarker();
+          }
+        });
+
+        // Calculate route and frame camera on first position
+        _calculateRouteForActiveRide().then((_) {
+          if (!_hasFramedInitialPosition && _currentDriverPosition != null) {
+            debugPrint('RidesScreen: Framing camera to driver position');
+            _fitCameraToRoute();
+            _hasFramedInitialPosition = true;
+          }
+        });
+
+        // Update ETA
+        _updateETA();
+      }
+    }
+
     // Reset state when ride changes or completes
     if (oldWidget.activeRide?.id != widget.activeRide?.id) {
       _currentDriverPosition = null;
       _targetDriverPosition = null;
       _hasInitiallyFramed = false;
+      _hasFramedInitialPosition = false;
       _animController?.dispose();
       _animController = null;
-      _routePoints = [];
 
       // Initialize position and route for new ride
       _initializeDriverPosition();
@@ -892,6 +946,7 @@ class _MapBackgroundState extends State<_MapBackground>
         _currentDriverPosition = null;
         _targetDriverPosition = null;
         _routePoints = [];
+        _hasFramedInitialPosition = false;
       });
     }
   }
@@ -1053,12 +1108,20 @@ class _MapBackgroundState extends State<_MapBackground>
 
   /// Calculate and display route for active ride based on status
   Future<void> _calculateRouteForActiveRide() async {
-    if (widget.activeRide == null) return;
+    if (widget.activeRide == null) {
+      debugPrint('RidesScreen: No active ride, skipping route calculation');
+      return;
+    }
 
     final status = widget.activeRide!.status?.toLowerCase() ?? '';
+    debugPrint(
+      'RidesScreen: _calculateRouteForActiveRide called for ride ${widget.activeRide!.id}, '
+      'status: $status, isDriver: ${widget.isDriver}',
+    );
 
     // Only calculate route for active statuses
     if (status != 'driver_en_route' && status != 'in_progress') {
+      debugPrint('RidesScreen: Status not active, clearing route');
       setState(() => _routePoints = []);
       return;
     }
@@ -1077,6 +1140,10 @@ class _MapBackgroundState extends State<_MapBackground>
           widget.activeRide!.originLng!,
         );
       }
+      debugPrint(
+        'RidesScreen: Route endpoints (driver_en_route): '
+        'FROM driver position: $from, TO pickup: $to',
+      );
     } else if (status == 'in_progress') {
       // Route from driver to destination
       from = _currentDriverPosition;
@@ -1087,17 +1154,27 @@ class _MapBackgroundState extends State<_MapBackground>
           widget.activeRide!.destinationLng!,
         );
       }
+      debugPrint(
+        'RidesScreen: Route endpoints (in_progress): '
+        'FROM driver position: $from, TO destination: $to',
+      );
     }
 
     if (from == null || to == null) {
       debugPrint(
-        'RidesScreen: Cannot calculate route - missing coordinates. '
-        'Driver position: $from, Destination: $to',
+        'RidesScreen: ⚠️ Cannot calculate route - missing coordinates. '
+        'Driver position (_currentDriverPosition): $from, Destination: $to',
+      );
+      debugPrint(
+        'RidesScreen: Current ride origin: (${widget.activeRide!.originLat}, ${widget.activeRide!.originLng}), '
+        'destination: (${widget.activeRide!.destinationLat}, ${widget.activeRide!.destinationLng})',
       );
       return;
     }
 
-    debugPrint('RidesScreen: Calculating route from ($from) to ($to)');
+    debugPrint(
+      'RidesScreen: ✅ Calculating route from ($from) to ($to) for ${widget.isDriver ? "DRIVER" : "PASSENGER"}',
+    );
 
     // Use debounced calculator to prevent excessive API calls
     final result = await _routeCalculator.calculateIfNeeded(from, to);
@@ -1107,7 +1184,12 @@ class _MapBackgroundState extends State<_MapBackground>
         _routePoints = result.polylinePoints;
       });
       debugPrint(
-        'RidesScreen: Route calculated with ${result.polylinePoints.length} points',
+        'RidesScreen: ✅ Route calculated successfully with ${result.polylinePoints.length} points, '
+        'displaying on map for ${widget.isDriver ? "DRIVER" : "PASSENGER"}',
+      );
+    } else {
+      debugPrint(
+        'RidesScreen: ⚠️ Route calculation returned null (debounced or failed)',
       );
     }
   }
@@ -1336,8 +1418,8 @@ class _MapBackgroundState extends State<_MapBackground>
                   ),
                 ],
               ),
-            // Driver location marker with tooltip (for passengers only)
-            if (!widget.isDriver && _currentDriverPosition != null)
+            // Driver location marker with tooltip (for both driver and passenger)
+            if (_currentDriverPosition != null)
               MarkerLayer(
                 markers: [
                   Marker(
