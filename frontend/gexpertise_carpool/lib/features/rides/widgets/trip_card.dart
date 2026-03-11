@@ -853,6 +853,21 @@ class _TripCardState extends State<TripCard>
 
       debugPrint('TripCard: Permission granted, starting location stream...');
 
+      // Send last-known position immediately so passengers see the car right away
+      // (before the first stream emission or heartbeat fires)
+      try {
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null && mounted) {
+          debugPrint(
+            'TripCard: Sending immediate last-known position: '
+            '(${lastKnown.latitude}, ${lastKnown.longitude})',
+          );
+          _sendLocationUpdate(lastKnown);
+        }
+      } catch (e) {
+        debugPrint('TripCard: Could not get last-known position: $e');
+      }
+
       // Start location stream
       const LocationSettings locationSettings = LocationSettings(
         accuracy: LocationAccuracy.high,

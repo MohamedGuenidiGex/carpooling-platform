@@ -470,10 +470,20 @@ class RideProvider extends ChangeNotifier {
         date: date,
       );
 
-      // Filter out own rides if excludeDriverId is provided
-      _searchResults = excludeDriverId != null
-          ? rides.where((ride) => ride.driverId != excludeDriverId).toList()
-          : rides;
+      // Only show bookable rides (exclude completed, cancelled, missed, in_progress)
+      const bookableStatuses = {
+        'scheduled',
+        'active',
+        'full',
+        'driver_en_route',
+      };
+      _searchResults = rides.where((ride) {
+        final status = ride.status?.toLowerCase() ?? 'scheduled';
+        final isBookable = bookableStatuses.contains(status);
+        final isNotOwn =
+            excludeDriverId == null || ride.driverId != excludeDriverId;
+        return isBookable && isNotOwn;
+      }).toList();
 
       _setSearching(false);
       notifyListeners();
