@@ -67,16 +67,6 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   // View mode state (only relevant when active ride exists)
   ViewMode _viewMode = ViewMode.currentRide;
 
-  // Driver position tracking (for map display)
-  LatLng? _driverPosition;
-
-  /// Handle driver position updates from TripCard
-  void _onDriverPositionUpdate(LatLng position) {
-    setState(() {
-      _driverPosition = position;
-    });
-  }
-
   @override
   void initState() {
     super.initState();
@@ -628,7 +618,6 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
             wsService: _wsService,
             onTap: _onMapTapped,
             selectedLocation: _selectedLocation,
-            driverPosition: _driverPosition,
           ),
 
           // Layer 2: Bottom sheets (above map)
@@ -662,7 +651,6 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
                   reservationId: _activeReservationId,
                   boardingDeadline: _activeBoardingDeadline,
                   onTogglePlanMode: _toggleViewMode,
-                  onDriverPositionUpdate: _onDriverPositionUpdate,
                 ),
               ),
             ),
@@ -707,8 +695,6 @@ class _MapBackground extends StatefulWidget {
   final WebSocketService wsService;
   final Function(LatLng)? onTap;
   final LatLng? selectedLocation;
-  final LatLng?
-  driverPosition; // Driver position from TripCard (for driver role)
 
   const _MapBackground({
     required this.mapController,
@@ -719,7 +705,6 @@ class _MapBackground extends StatefulWidget {
     required this.wsService,
     this.onTap,
     this.selectedLocation,
-    this.driverPosition,
   });
 
   @override
@@ -748,9 +733,6 @@ class _MapBackgroundState extends State<_MapBackground>
   // Named callback reference so dispose only removes this widget's listener
   Function(dynamic)? _locationUpdateCallback;
 
-  // Track if we've done initial camera framing
-  bool _hasFramedInitialPosition = false;
-
   @override
   void initState() {
     super.initState();
@@ -760,6 +742,10 @@ class _MapBackgroundState extends State<_MapBackground>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _setupDriverLocationListener();
+        // For drivers, calculate route immediately since own GPS is available
+        if (widget.isDriver && widget.currentPosition != null) {
+          _calculateRouteForActiveRide();
+        }
       }
     });
   }
@@ -882,48 +868,11 @@ class _MapBackgroundState extends State<_MapBackground>
   void didUpdateWidget(_MapBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Handle driver position updates from parent (for driver role)
-    if (widget.isDriver && widget.driverPosition != null) {
-      if (widget.driverPosition != oldWidget.driverPosition) {
-        debugPrint(
-          'RidesScreen: Driver position update from parent: (${widget.driverPosition!.latitude}, ${widget.driverPosition!.longitude})',
-        );
-
-        setState(() {
-          if (_currentDriverPosition == null) {
-            // First position - set immediately
-            _currentDriverPosition = widget.driverPosition;
-            _targetDriverPosition = widget.driverPosition;
-            debugPrint(
-              'RidesScreen: First driver position set for driver role',
-            );
-          } else {
-            // Update target and animate
-            _targetDriverPosition = widget.driverPosition;
-            _animateMarker();
-          }
-        });
-
-        // Calculate route and frame camera on first position
-        _calculateRouteForActiveRide().then((_) {
-          if (!_hasFramedInitialPosition && _currentDriverPosition != null) {
-            debugPrint('RidesScreen: Framing camera to driver position');
-            _fitCameraToRoute();
-            _hasFramedInitialPosition = true;
-          }
-        });
-
-        // Update ETA
-        _updateETA();
-      }
-    }
-
     // Reset state when ride changes or completes
     if (oldWidget.activeRide?.id != widget.activeRide?.id) {
       _currentDriverPosition = null;
       _targetDriverPosition = null;
       _hasInitiallyFramed = false;
-      _hasFramedInitialPosition = false;
       _animController?.dispose();
       _animController = null;
 
@@ -939,6 +888,12 @@ class _MapBackgroundState extends State<_MapBackground>
       _calculateRouteForActiveRide();
     }
 
+    // For drivers: recalculate route when own GPS position changes
+    if (widget.isDriver &&
+        widget.currentPosition != oldWidget.currentPosition) {
+      _calculateRouteForActiveRide();
+    }
+
     // Clear driver position and route when ride completes
     if ((oldStatus == 'driver_en_route' || oldStatus == 'in_progress') &&
         (newStatus == 'completed' || newStatus == 'cancelled')) {
@@ -946,7 +901,6 @@ class _MapBackgroundState extends State<_MapBackground>
         _currentDriverPosition = null;
         _targetDriverPosition = null;
         _routePoints = [];
-        _hasFramedInitialPosition = false;
       });
     }
   }
@@ -1076,7 +1030,14 @@ class _MapBackgroundState extends State<_MapBackground>
   void _animateMarker() {
     if (_currentDriverPosition == null || _targetDriverPosition == null) return;
 
-    _animController?.dispose();
+    // Safely dispose previous animation controller
+    try {
+      _animController?.dispose();
+    } catch (_) {
+      // Controller may have been disposed already by didUpdateWidget
+    }
+    _animController = null;
+
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
@@ -1129,10 +1090,15 @@ class _MapBackgroundState extends State<_MapBackground>
     LatLng? from;
     LatLng? to;
 
+    // Determine route origin: driver uses own GPS, passenger uses driver's WebSocket position
+    final LatLng? routeOrigin = widget.isDriver
+        ? widget.currentPosition
+        : _currentDriverPosition;
+
     // Determine route endpoints based on status
     if (status == 'driver_en_route') {
       // Route from driver to pickup location
-      from = _currentDriverPosition;
+      from = routeOrigin;
       if (widget.activeRide!.originLat != null &&
           widget.activeRide!.originLng != null) {
         to = LatLng(
@@ -1142,11 +1108,11 @@ class _MapBackgroundState extends State<_MapBackground>
       }
       debugPrint(
         'RidesScreen: Route endpoints (driver_en_route): '
-        'FROM driver position: $from, TO pickup: $to',
+        'FROM ${widget.isDriver ? "own GPS" : "driver WebSocket"}: $from, TO pickup: $to',
       );
     } else if (status == 'in_progress') {
       // Route from driver to destination
-      from = _currentDriverPosition;
+      from = routeOrigin;
       if (widget.activeRide!.destinationLat != null &&
           widget.activeRide!.destinationLng != null) {
         to = LatLng(
@@ -1156,7 +1122,7 @@ class _MapBackgroundState extends State<_MapBackground>
       }
       debugPrint(
         'RidesScreen: Route endpoints (in_progress): '
-        'FROM driver position: $from, TO destination: $to',
+        'FROM ${widget.isDriver ? "own GPS" : "driver WebSocket"}: $from, TO destination: $to',
       );
     }
 
@@ -1418,8 +1384,8 @@ class _MapBackgroundState extends State<_MapBackground>
                   ),
                 ],
               ),
-            // Driver location marker with tooltip (for both driver and passenger)
-            if (_currentDriverPosition != null)
+            // Driver location marker with tooltip (for passengers only)
+            if (!widget.isDriver && _currentDriverPosition != null)
               MarkerLayer(
                 markers: [
                   Marker(
