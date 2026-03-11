@@ -174,41 +174,67 @@ class _NotificationCard extends StatefulWidget {
 class _NotificationCardState extends State<_NotificationCard> {
   bool _isExpanded = false;
 
+  /// Toggle expand/collapse state
+  void _toggleExpand() {
+    setState(() {
+      _isExpanded = !_isExpanded;
+    });
+  }
+
+  /// Handle main action: mark as read and navigate if applicable
+  Future<void> _handleMainAction() async {
+    // Mark as read
+    await context.read<NotificationProvider>().markAsRead(
+      widget.notification.id,
+    );
+
+    // Navigate based on notification type
+    if (widget.notification.rideId != null) {
+      if (widget.notification.type == 'request') {
+        // Driver received a request - go to RideDetails to approve/reject
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                RideDetailsScreen(rideId: widget.notification.rideId!),
+          ),
+        );
+      } else if (widget.notification.type == 'approval') {
+        // Passenger's request was approved - go to Booked Rides
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const HistoryScreen()),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final type = widget.notification.notificationType;
     final isLongMessage = widget.notification.message.length > 100;
 
-    return GestureDetector(
-      onTap: () {
-        if (isLongMessage) {
-          // Long messages: tap toggles expand/collapse
-          setState(() {
-            _isExpanded = !_isExpanded;
-          });
-        } else {
-          // Short messages: tap navigates immediately
-          _handleNavigation(context);
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          // Unread notifications have light red background
-          color: widget.notification.isRead ? Colors.white : Colors.red[50],
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: widget.notification.isRead
-                ? Colors.grey[200]!
-                : Colors.red[100]!,
-          ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        // Unread notifications have light red background
+        color: widget.notification.isRead ? Colors.white : Colors.red[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: widget.notification.isRead
+              ? Colors.grey[200]!
+              : Colors.red[100]!,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Icon Container
-            Container(
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Icon Container
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: _handleMainAction,
+            child: Container(
               width: 48,
               height: 48,
               decoration: BoxDecoration(
@@ -217,9 +243,13 @@ class _NotificationCardState extends State<_NotificationCard> {
               ),
               child: Icon(type.icon, color: type.color, size: 24),
             ),
-            const SizedBox(width: 16),
-            // Content
-            Expanded(
+          ),
+          const SizedBox(width: 16),
+          // Content - Tapping body triggers main action
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _handleMainAction,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -276,54 +306,33 @@ class _NotificationCardState extends State<_NotificationCard> {
                           ),
                         ),
                       ],
-                      // Show expand/collapse indicator for long messages
-                      if (isLongMessage) ...[
-                        const Spacer(),
-                        Icon(
-                          _isExpanded
-                              ? Icons.keyboard_arrow_up
-                              : Icons.keyboard_arrow_down,
-                          size: 18,
-                          color: Colors.grey[400],
+                      const Spacer(),
+                      // Show expand/collapse button for long messages
+                      // Arrow is tappable separately for expand/collapse only
+                      if (isLongMessage)
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _toggleExpand,
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              _isExpanded
+                                  ? Icons.keyboard_arrow_up
+                                  : Icons.keyboard_arrow_down,
+                              size: 18,
+                              color: Colors.grey[400],
+                            ),
+                          ),
                         ),
-                      ],
                     ],
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
-  }
-
-  /// Handle navigation to ride details or history
-  Future<void> _handleNavigation(BuildContext context) async {
-    // Mark as read
-    await context.read<NotificationProvider>().markAsRead(
-      widget.notification.id,
-    );
-
-    // Navigate based on notification type
-    if (widget.notification.rideId != null) {
-      if (widget.notification.type == 'request') {
-        // Driver received a request - go to RideDetails to approve/reject
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                RideDetailsScreen(rideId: widget.notification.rideId!),
-          ),
-        );
-      } else if (widget.notification.type == 'approval') {
-        // Passenger's request was approved - go to Booked Rides
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const HistoryScreen()),
-        );
-      }
-    }
   }
 
   String _getTypeLabel(String type) {
