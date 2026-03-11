@@ -1276,6 +1276,15 @@ class _MapBackgroundState extends State<_MapBackground>
     final LatLng initialCenter =
         widget.currentPosition ?? const LatLng(34.7408, 10.7600);
 
+    // Debug: Log driver marker coordinates before rendering
+    if (!widget.isDriver && _currentDriverPosition != null) {
+      debugPrint(
+        '🚗 Rendering driver marker at: '
+        'lat=${_currentDriverPosition!.latitude}, '
+        'lng=${_currentDriverPosition!.longitude}',
+      );
+    }
+
     return Stack(
       children: [
         FlutterMap(
@@ -1389,15 +1398,15 @@ class _MapBackgroundState extends State<_MapBackground>
                   ),
                 ],
               ),
-            // Driver location marker with tooltip (for passengers only)
+            // Driver location marker (car icon) - for passengers only
+            // Simplified to 40x40 with center alignment to fix visual offset issue
             if (!widget.isDriver && _currentDriverPosition != null)
               MarkerLayer(
                 markers: [
                   Marker(
                     point: _currentDriverPosition!,
-                    width: 180,
-                    height: 200,
-                    alignment: Alignment.bottomCenter,
+                    width: 40,
+                    height: 40,
                     child: GestureDetector(
                       onTap: () {
                         setState(() => _showDriverInfo = !_showDriverInfo);
@@ -1406,68 +1415,65 @@ class _MapBackgroundState extends State<_MapBackground>
                           _ensureDriverInfoVisible();
                         }
                       },
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.bottomCenter,
-                        children: [
-                          // Car marker (always shown at bottom)
-                          Positioned(
-                            bottom: 0,
-                            child: AnimatedScale(
-                              scale: _showDriverInfo ? 1.1 : 1.0,
-                              duration: const Duration(milliseconds: 200),
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.3),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.directions_car,
-                                  color: BrandColors.primaryRed,
-                                  size: 24,
-                                ),
+                      child: AnimatedScale(
+                        scale: _showDriverInfo ? 1.1 : 1.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
                               ),
-                            ),
+                            ],
                           ),
-                          // Tooltip (shown above marker when active)
-                          if (_showDriverInfo)
-                            Positioned(
-                              bottom: 48,
-                              child: AnimatedScale(
-                                scale: _showDriverInfo ? 1.0 : 0.8,
-                                duration: const Duration(milliseconds: 200),
-                                curve: Curves.easeOutCubic,
-                                child: AnimatedOpacity(
-                                  opacity: _showDriverInfo ? 1.0 : 0.0,
-                                  duration: const Duration(milliseconds: 150),
-                                  child: DriverInfoTooltip(
-                                    driverPosition: _currentDriverPosition!,
-                                    driverName:
-                                        widget.activeRide?.driverName ??
-                                        'Unknown',
-                                    driverInitial:
-                                        (widget.activeRide?.driverName ??
-                                                '?')[0]
-                                            .toUpperCase(),
-                                    carModel: widget.activeRide?.driverCarModel,
-                                    carColor: widget.activeRide?.driverCarColor,
-                                    eta: _currentETA,
-                                    onClose: () =>
-                                        setState(() => _showDriverInfo = false),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
+                          child: const Icon(
+                            Icons.directions_car,
+                            color: BrandColors.primaryRed,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            // Tooltip marker (shown above car when active)
+            if (!widget.isDriver &&
+                _currentDriverPosition != null &&
+                _showDriverInfo)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: _currentDriverPosition!,
+                    width: 180,
+                    height: 180,
+                    alignment: Alignment.bottomCenter,
+                    child: AnimatedScale(
+                      scale: _showDriverInfo ? 1.0 : 0.8,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: AnimatedOpacity(
+                        opacity: _showDriverInfo ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 150),
+                        child: DriverInfoTooltip(
+                          driverPosition: _currentDriverPosition!,
+                          driverName:
+                              widget.activeRide?.driverName ?? 'Unknown',
+                          driverInitial:
+                              (widget.activeRide?.driverName ?? '?')[0]
+                                  .toUpperCase(),
+                          carModel: widget.activeRide?.driverCarModel,
+                          carColor: widget.activeRide?.driverCarColor,
+                          eta: _currentETA,
+                          onClose: () =>
+                              setState(() => _showDriverInfo = false),
+                        ),
                       ),
                     ),
                   ),
