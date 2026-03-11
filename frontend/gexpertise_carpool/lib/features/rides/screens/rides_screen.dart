@@ -966,33 +966,38 @@ class _MapBackgroundState extends State<_MapBackground>
           'RidesScreen: ✅ Processing driver location for ride $rideId: ($lat, $lng)',
         );
 
+        final bool isFirstPosition = _currentDriverPosition == null;
+
         setState(() {
           _targetDriverPosition = newPosition;
 
-          if (_currentDriverPosition == null) {
+          if (isFirstPosition) {
             // First update - set immediately
             debugPrint(
               'RidesScreen: First driver position received, setting immediately',
             );
             _currentDriverPosition = newPosition;
-          } else {
-            // Animate from current to target
-            debugPrint('RidesScreen: Updating driver position with animation');
-            _animateMarker();
           }
         });
 
-        // Update route when driver position changes
-        _calculateRouteForActiveRide().then((_) {
-          // Frame camera after route is calculated on first update
-          if (!_hasInitiallyFramed &&
-              widget.activeRide != null &&
-              _currentDriverPosition != null) {
-            debugPrint('RidesScreen: Framing camera to show route');
-            _fitCameraToRoute();
-            _hasInitiallyFramed = true;
-          }
-        });
+        // Animate marker AFTER setState completes (avoid creating AnimationController inside setState)
+        if (!isFirstPosition) {
+          debugPrint('RidesScreen: Updating driver position with animation');
+          _animateMarker();
+        }
+
+        // Frame camera IMMEDIATELY on first driver position
+        // Don't wait for route calculation (OSRM can timeout for 30s)
+        if (isFirstPosition && !_hasInitiallyFramed) {
+          debugPrint(
+            'RidesScreen: Framing camera to driver position immediately',
+          );
+          _fitCameraToRoute();
+          _hasInitiallyFramed = true;
+        }
+
+        // Update route when driver position changes (async, may take time)
+        _calculateRouteForActiveRide();
 
         // Update ETA with debouncing (5 second interval)
         _updateETA();
