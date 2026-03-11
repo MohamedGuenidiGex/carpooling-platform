@@ -375,17 +375,45 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
 
   /// Calculate and display route between origin and destination
   Future<void> _calculateRoute() async {
+    print('CreateRideScreen: _calculateRoute called');
+    print('CreateRideScreen: Origin coordinates: $_originCoordinates');
+    print(
+      'CreateRideScreen: Destination coordinates: $_destinationCoordinates',
+    );
+
     if (_originCoordinates != null && _destinationCoordinates != null) {
+      print(
+        'CreateRideScreen: Both coordinates available, calling RouteService.calculateRoute',
+      );
+      print(
+        'CreateRideScreen: Origin - lat: ${_originCoordinates!.latitude}, lon: ${_originCoordinates!.longitude}',
+      );
+      print(
+        'CreateRideScreen: Destination - lat: ${_destinationCoordinates!.latitude}, lon: ${_destinationCoordinates!.longitude}',
+      );
+
       final result = await RouteService.calculateRoute(
         _originCoordinates!,
         _destinationCoordinates!,
       );
+
+      print(
+        'CreateRideScreen: RouteService returned: ${result != null ? "success" : "null"}',
+      );
+
       if (result != null && mounted) {
         setState(() {
           _routePoints = result.polylinePoints;
         });
+        print(
+          'CreateRideScreen: Route points set: ${_routePoints.length} points',
+        );
         _fitCameraToBounds();
+      } else {
+        print('CreateRideScreen: Route calculation failed or returned null');
       }
+    } else {
+      print('CreateRideScreen: Missing coordinates - cannot calculate route');
     }
   }
 

@@ -34,6 +34,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
   final MapController _mapController = MapController();
 
   DateTime? _selectedDate;
+  LatLng? _originCoordinates; // Store origin coordinates for route calculation
   LatLng? _destinationCoordinates;
   bool _isResolvingOrigin = false;
   bool _hasPerformedSearch = false;
@@ -50,6 +51,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
     // Set start location if provided - address is already resolved from reverse geocoding
     if (widget.startName != null) {
       _originController.text = widget.startName!;
+      _originCoordinates = widget.startCoordinates; // Store initial coordinates
     }
 
     // Detect user's country from start coordinates for search filtering
@@ -131,7 +133,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
     // Print coordinates for debugging
     debugPrint('Search with coordinates:');
     debugPrint(
-      '  Origin: ${widget.startCoordinates?.latitude}, ${widget.startCoordinates?.longitude}',
+      '  Origin: ${_originCoordinates?.latitude}, ${_originCoordinates?.longitude}',
     );
     debugPrint(
       '  Destination: ${_destinationCoordinates?.latitude}, ${_destinationCoordinates?.longitude}',
@@ -185,7 +187,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // Map Preview (shows origin and destination)
-                if (widget.startCoordinates != null ||
+                if (_originCoordinates != null ||
                     _destinationCoordinates != null)
                   _buildMapPreview(),
                 // Search Form
@@ -268,7 +270,8 @@ class _FindRideScreenState extends State<FindRideScreen> {
                     onPressed: () {
                       controller.clear();
                       setState(() {
-                        // Clear origin coordinates when text is cleared
+                        _originCoordinates = null;
+                        _routePoints = [];
                       });
                     },
                   )
@@ -332,8 +335,18 @@ class _FindRideScreenState extends State<FindRideScreen> {
           _originController.text = LocationSearchService.getDisplayName(
             suggestion,
           );
-          // Update origin coordinates if needed for route calculation
+          // Store origin coordinates for route calculation
+          final lat = suggestion['lat'] as double;
+          final lon = suggestion['lon'] as double;
+          _originCoordinates = LatLng(lat, lon);
+
+          print('FindRideScreen: Origin selected - lat: $lat, lon: $lon');
+          print('FindRideScreen: Origin LatLng object: $_originCoordinates');
         });
+        // Recalculate route if destination is already set
+        if (_destinationCoordinates != null) {
+          _calculateRoute();
+        }
       },
     );
   }
@@ -375,6 +388,7 @@ class _FindRideScreenState extends State<FindRideScreen> {
                       controller.clear();
                       setState(() {
                         _destinationCoordinates = null;
+                        _routePoints = [];
                       });
                     },
                   )
@@ -427,10 +441,15 @@ class _FindRideScreenState extends State<FindRideScreen> {
       onSelected: (suggestion) {
         setState(() {
           _destinationController.text = suggestion['display_name'] as String;
-          _destinationCoordinates = LatLng(
-            suggestion['lat'] as double,
-            suggestion['lon'] as double,
+          final lat = suggestion['lat'] as double;
+          final lon = suggestion['lon'] as double;
+          _destinationCoordinates = LatLng(lat, lon);
+
+          print('FindRideScreen: Destination selected - lat: $lat, lon: $lon');
+          print(
+            'FindRideScreen: Destination LatLng object: $_destinationCoordinates',
           );
+
           // Move map to show the destination
           _mapController.move(_destinationCoordinates!, 13.0);
         });
@@ -562,10 +581,10 @@ class _FindRideScreenState extends State<FindRideScreen> {
     final markers = <Marker>[];
 
     // Green marker for start (origin)
-    if (widget.startCoordinates != null) {
+    if (_originCoordinates != null) {
       markers.add(
         Marker(
-          point: widget.startCoordinates!,
+          point: _originCoordinates!,
           width: 40,
           height: 40,
           child: const Icon(Icons.location_on, color: Colors.green, size: 40),
@@ -587,18 +606,15 @@ class _FindRideScreenState extends State<FindRideScreen> {
 
     // Determine map center
     LatLng mapCenter;
-    if (widget.startCoordinates != null && _destinationCoordinates != null) {
+    if (_originCoordinates != null && _destinationCoordinates != null) {
       // Center between origin and destination
       mapCenter = LatLng(
-        (widget.startCoordinates!.latitude +
-                _destinationCoordinates!.latitude) /
-            2,
-        (widget.startCoordinates!.longitude +
-                _destinationCoordinates!.longitude) /
+        (_originCoordinates!.latitude + _destinationCoordinates!.latitude) / 2,
+        (_originCoordinates!.longitude + _destinationCoordinates!.longitude) /
             2,
       );
-    } else if (widget.startCoordinates != null) {
-      mapCenter = widget.startCoordinates!;
+    } else if (_originCoordinates != null) {
+      mapCenter = _originCoordinates!;
     } else if (_destinationCoordinates != null) {
       mapCenter = _destinationCoordinates!;
     } else {
@@ -647,9 +663,9 @@ class _FindRideScreenState extends State<FindRideScreen> {
 
   /// Fit camera to show both origin and destination
   void _fitCameraToBounds() {
-    if (widget.startCoordinates != null && _destinationCoordinates != null) {
+    if (_originCoordinates != null && _destinationCoordinates != null) {
       final bounds = LatLngBounds(
-        widget.startCoordinates!,
+        _originCoordinates!,
         _destinationCoordinates!,
       );
       _mapController.fitCamera(
@@ -660,17 +676,43 @@ class _FindRideScreenState extends State<FindRideScreen> {
 
   /// Calculate and display route between origin and destination
   Future<void> _calculateRoute() async {
-    if (widget.startCoordinates != null && _destinationCoordinates != null) {
+    print('FindRideScreen: _calculateRoute called');
+    print('FindRideScreen: Origin coordinates: $_originCoordinates');
+    print('FindRideScreen: Destination coordinates: $_destinationCoordinates');
+
+    if (_originCoordinates != null && _destinationCoordinates != null) {
+      print(
+        'FindRideScreen: Both coordinates available, calling RouteService.calculateRoute',
+      );
+      print(
+        'FindRideScreen: Origin - lat: ${_originCoordinates!.latitude}, lon: ${_originCoordinates!.longitude}',
+      );
+      print(
+        'FindRideScreen: Destination - lat: ${_destinationCoordinates!.latitude}, lon: ${_destinationCoordinates!.longitude}',
+      );
+
       final result = await RouteService.calculateRoute(
-        widget.startCoordinates!,
+        _originCoordinates!,
         _destinationCoordinates!,
       );
+
+      print(
+        'FindRideScreen: RouteService returned: ${result != null ? "success" : "null"}',
+      );
+
       if (result != null && mounted) {
         setState(() {
           _routePoints = result.polylinePoints;
         });
+        print(
+          'FindRideScreen: Route points set: ${_routePoints.length} points',
+        );
         _fitCameraToBounds();
+      } else {
+        print('FindRideScreen: Route calculation failed or returned null');
       }
+    } else {
+      print('FindRideScreen: Missing coordinates - cannot calculate route');
     }
   }
 

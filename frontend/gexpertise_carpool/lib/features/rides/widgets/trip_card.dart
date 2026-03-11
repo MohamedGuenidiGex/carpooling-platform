@@ -49,7 +49,12 @@ class _TripCardState extends State<TripCard>
 
   // GPS location streaming
   StreamSubscription<Position>? _locationStreamSubscription;
+  Timer? _locationHeartbeatTimer;
+  Position? _lastKnownPosition;
   final WebSocketService _wsService = WebSocketService();
+
+  // Named callback reference so dispose only removes this widget's listener
+  Function(dynamic)? _locationCallback;
 
   // ETA calculation
   String? _etaText;
@@ -96,8 +101,8 @@ class _TripCardState extends State<TripCard>
   void dispose() {
     _boardingDeadlineTimer?.cancel();
     _stopLocationStreaming();
-    if (!widget.isDriver) {
-      _wsService.off('driver_location_updated');
+    if (!widget.isDriver && _locationCallback != null) {
+      _wsService.off('driver_location_updated', _locationCallback!);
     }
     _animController.dispose();
     super.dispose();
@@ -797,22 +802,40 @@ class _TripCardState extends State<TripCard>
     final isActiveStatus =
         status == 'driver_en_route' || status == 'in_progress';
 
+    debugPrint(
+      'TripCard: _startLocationStreamingIfNeeded called for ride ${currentRide.id}',
+    );
+    debugPrint(
+      'TripCard: Ride status: $status, isActiveStatus: $isActiveStatus',
+    );
+
     if (!isActiveStatus) {
+      debugPrint('TripCard: Not active status, stopping location streaming');
       _stopLocationStreaming();
       return;
     }
 
     // Already streaming
     if (_locationStreamSubscription != null) {
+      debugPrint(
+        'TripCard: Already streaming location for ride ${currentRide.id}',
+      );
       return;
     }
 
     // Request location permission
     try {
+      debugPrint('TripCard: Checking location permission...');
       LocationPermission permission = await Geolocator.checkPermission();
+      debugPrint('TripCard: Current permission: $permission');
+
       if (permission == LocationPermission.denied) {
+        debugPrint('TripCard: Permission denied, requesting...');
         permission = await Geolocator.requestPermission();
+        debugPrint('TripCard: Permission after request: $permission');
+
         if (permission == LocationPermission.denied) {
+          debugPrint('TripCard: Permission still denied after request');
           if (mounted) {
             _showLocationPermissionDialog();
           }
@@ -821,11 +844,14 @@ class _TripCardState extends State<TripCard>
       }
 
       if (permission == LocationPermission.deniedForever) {
+        debugPrint('TripCard: Permission denied forever');
         if (mounted) {
           _showLocationPermissionDialog();
         }
         return;
       }
+
+      debugPrint('TripCard: Permission granted, starting location stream...');
 
       // Start location stream
       const LocationSettings locationSettings = LocationSettings(
@@ -838,12 +864,26 @@ class _TripCardState extends State<TripCard>
             locationSettings: locationSettings,
           ).listen(
             (Position position) {
+              debugPrint(
+                'TripCard: GPS position received: (${position.latitude}, ${position.longitude})',
+              );
               _sendLocationUpdate(position);
             },
             onError: (error) {
               debugPrint('TripCard: Location stream error: $error');
             },
           );
+
+      // Heartbeat: re-send last known position every 10 seconds even when stationary
+      // This ensures passengers who join mid-ride receive the driver's position promptly
+      _locationHeartbeatTimer = Timer.periodic(const Duration(seconds: 10), (
+        _,
+      ) {
+        if (_lastKnownPosition != null) {
+          debugPrint('TripCard: Heartbeat - re-sending last known position');
+          _sendLocationUpdate(_lastKnownPosition!);
+        }
+      });
 
       debugPrint(
         'TripCard: Started driver location streaming for ride ${currentRide.id}',
@@ -855,6 +895,8 @@ class _TripCardState extends State<TripCard>
 
   /// Stop GPS location streaming
   void _stopLocationStreaming() {
+    _locationHeartbeatTimer?.cancel();
+    _locationHeartbeatTimer = null;
     if (_locationStreamSubscription != null) {
       _locationStreamSubscription!.cancel();
       _locationStreamSubscription = null;
@@ -864,21 +906,43 @@ class _TripCardState extends State<TripCard>
 
   /// Send location update to backend via WebSocket
   void _sendLocationUpdate(Position position) {
-    if (currentRide.id == null) return;
-    if (!_wsService.isConnected) return;
+    debugPrint('TripCard: _sendLocationUpdate called');
+
+    if (currentRide.id == null) {
+      debugPrint('TripCard: Cannot send location - ride ID is null');
+      return;
+    }
+
+    if (!_wsService.isConnected) {
+      debugPrint('TripCard: Cannot send location - WebSocket not connected');
+      return;
+    }
 
     final status = currentRide.status?.toLowerCase() ?? '';
     final isActiveStatus =
         status == 'driver_en_route' || status == 'in_progress';
 
+    debugPrint(
+      'TripCard: Ride status: $status, isActiveStatus: $isActiveStatus',
+    );
+
     if (!isActiveStatus) {
+      debugPrint('TripCard: Ride not active, stopping location streaming');
       _stopLocationStreaming();
       return;
     }
 
+    // Store last known position for heartbeat
+    _lastKnownPosition = position;
+
     // Update driver position for ETA calculation
     _driverPosition = LatLng(position.latitude, position.longitude);
     _calculateETA();
+
+    debugPrint(
+      'TripCard: Sending driver location update via WebSocket - '
+      'rideId: ${currentRide.id}, lat: ${position.latitude}, lng: ${position.longitude}',
+    );
 
     _wsService.sendDriverLocationUpdate(
       rideId: currentRide.id!,
@@ -887,17 +951,14 @@ class _TripCardState extends State<TripCard>
       timestamp: DateTime.now().toIso8601String(),
     );
 
-    debugPrint(
-      'TripCard: Sent driver location update: '
-      '(${position.latitude}, ${position.longitude})',
-    );
+    debugPrint('TripCard: Driver location update sent successfully');
   }
 
   /// Setup WebSocket listener for driver location updates (passenger only)
   void _setupDriverLocationListener() {
     if (currentRide.id == null) return;
 
-    _wsService.on('driver_location_updated', (data) {
+    _locationCallback = (data) {
       if (!mounted) return;
       if (data is! Map) return;
 
@@ -914,7 +975,8 @@ class _TripCardState extends State<TripCard>
       );
 
       _calculateETA();
-    });
+    };
+    _wsService.on('driver_location_updated', _locationCallback!);
   }
 
   /// Calculate ETA based on current driver position and ride status

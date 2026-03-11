@@ -182,14 +182,10 @@ class _NotificationCardState extends State<_NotificationCard> {
     return GestureDetector(
       onTap: () {
         if (isLongMessage) {
-          // Long messages: first tap expands, second tap navigates
-          if (_isExpanded) {
-            _handleNavigation(context);
-          } else {
-            setState(() {
-              _isExpanded = true;
-            });
-          }
+          // Long messages: tap toggles expand/collapse
+          setState(() {
+            _isExpanded = !_isExpanded;
+          });
         } else {
           // Short messages: tap navigates immediately
           _handleNavigation(context);

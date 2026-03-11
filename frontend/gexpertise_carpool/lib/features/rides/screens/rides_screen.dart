@@ -730,6 +730,9 @@ class _MapBackgroundState extends State<_MapBackground>
   List<LatLng> _routePoints = [];
   final DebouncedRouteCalculator _routeCalculator = DebouncedRouteCalculator();
 
+  // Named callback reference so dispose only removes this widget's listener
+  Function(dynamic)? _locationUpdateCallback;
+
   @override
   void initState() {
     super.initState();
@@ -764,7 +767,9 @@ class _MapBackgroundState extends State<_MapBackground>
 
   @override
   void dispose() {
-    widget.wsService.off('driver_location_updated');
+    if (_locationUpdateCallback != null) {
+      widget.wsService.off('driver_location_updated', _locationUpdateCallback!);
+    }
     _animController?.dispose();
     super.dispose();
   }
@@ -895,56 +900,122 @@ class _MapBackgroundState extends State<_MapBackground>
     debugPrint(
       'RidesScreen: Setting up driver location listener, isDriver=${widget.isDriver}',
     );
-    widget.wsService.on('driver_location_updated', (data) {
-      debugPrint('RidesScreen: driver_location_updated event received: $data');
-      if (!mounted) return;
-      if (widget.isDriver) return; // Only passengers track driver
-      if (widget.activeRide == null) return;
+    debugPrint('RidesScreen: Active ride ID: ${widget.activeRide?.id}');
+    debugPrint('RidesScreen: Active ride status: ${widget.activeRide?.status}');
+    debugPrint(
+      'RidesScreen: WebSocket connected: ${widget.wsService.isConnected}',
+    );
 
-      final Map<String, dynamic> locationData = data as Map<String, dynamic>;
-      final int rideId = locationData['ride_id'] as int;
+    _locationUpdateCallback = (data) {
+      debugPrint('RidesScreen: driver_location_updated event received');
+      debugPrint('RidesScreen: Event data type: ${data.runtimeType}');
+      debugPrint('RidesScreen: Event data: $data');
 
-      // Only process if it's for the current active ride
-      if (rideId != widget.activeRide!.id) return;
+      if (!mounted) {
+        debugPrint('RidesScreen: Widget not mounted, ignoring event');
+        return;
+      }
 
-      // Only process during active ride statuses
+      if (widget.isDriver) {
+        debugPrint('RidesScreen: User is driver, ignoring event');
+        return;
+      }
+
+      if (widget.activeRide == null) {
+        debugPrint('RidesScreen: No active ride, ignoring event');
+        return;
+      }
+
+      try {
+        final Map<String, dynamic> locationData = data as Map<String, dynamic>;
+        final int rideId = locationData['ride_id'] as int;
+
+        debugPrint(
+          'RidesScreen: Event for ride $rideId, current ride ${widget.activeRide!.id}',
+        );
+
+        // Only process if it's for the current active ride
+        if (rideId != widget.activeRide!.id) {
+          debugPrint('RidesScreen: Event for different ride, ignoring');
+          return;
+        }
+
+        // Only process during active ride statuses
+        final status = widget.activeRide!.status?.toLowerCase() ?? '';
+        debugPrint('RidesScreen: Current ride status: $status');
+
+        if (status != 'driver_en_route' && status != 'in_progress') {
+          debugPrint('RidesScreen: Ride not in active status, ignoring');
+          return;
+        }
+
+        final double lat = (locationData['lat'] as num).toDouble();
+        final double lng = (locationData['lng'] as num).toDouble();
+        final LatLng newPosition = LatLng(lat, lng);
+
+        debugPrint(
+          'RidesScreen: ✅ Processing driver location for ride $rideId: ($lat, $lng)',
+        );
+
+        setState(() {
+          _targetDriverPosition = newPosition;
+
+          if (_currentDriverPosition == null) {
+            // First update - set immediately
+            debugPrint(
+              'RidesScreen: First driver position received, setting immediately',
+            );
+            _currentDriverPosition = newPosition;
+          } else {
+            // Animate from current to target
+            debugPrint('RidesScreen: Updating driver position with animation');
+            _animateMarker();
+          }
+        });
+
+        // Update route when driver position changes
+        _calculateRouteForActiveRide().then((_) {
+          // Frame camera after route is calculated on first update
+          if (!_hasInitiallyFramed &&
+              widget.activeRide != null &&
+              _currentDriverPosition != null) {
+            debugPrint('RidesScreen: Framing camera to show route');
+            _fitCameraToRoute();
+            _hasInitiallyFramed = true;
+          }
+        });
+
+        // Update ETA with debouncing (5 second interval)
+        _updateETA();
+      } catch (e) {
+        debugPrint('RidesScreen: Error processing driver location update: $e');
+      }
+    };
+    widget.wsService.on('driver_location_updated', _locationUpdateCallback!);
+
+    // Set up fallback timer to check if driver position is received
+    if (!widget.isDriver && widget.activeRide != null) {
       final status = widget.activeRide!.status?.toLowerCase() ?? '';
-      if (status != 'driver_en_route' && status != 'in_progress') return;
-
-      final double lat = (locationData['lat'] as num).toDouble();
-      final double lng = (locationData['lng'] as num).toDouble();
-      final LatLng newPosition = LatLng(lat, lng);
-
-      debugPrint(
-        'RidesScreen: Processing driver location for ride $rideId: ($lat, $lng)',
-      );
-
-      setState(() {
-        _targetDriverPosition = newPosition;
-
-        if (_currentDriverPosition == null) {
-          // First update - set immediately
-          _currentDriverPosition = newPosition;
-        } else {
-          // Animate from current to target
-          _animateMarker();
-        }
-      });
-
-      // Update route when driver position changes
-      _calculateRouteForActiveRide().then((_) {
-        // Frame camera after route is calculated on first update
-        if (!_hasInitiallyFramed &&
-            widget.activeRide != null &&
-            _currentDriverPosition != null) {
-          _fitCameraToRoute();
-          _hasInitiallyFramed = true;
-        }
-      });
-
-      // Update ETA with debouncing (5 second interval)
-      _updateETA();
-    });
+      if (status == 'driver_en_route' || status == 'in_progress') {
+        debugPrint(
+          'RidesScreen: Setting up 5-second fallback timer for driver position',
+        );
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted && _currentDriverPosition == null) {
+            debugPrint(
+              'RidesScreen: ⚠️ WARNING: No driver position received after 5 seconds!',
+            );
+            debugPrint(
+              'RidesScreen: WebSocket connected: ${widget.wsService.isConnected}',
+            );
+            debugPrint('RidesScreen: Active ride: ${widget.activeRide?.id}');
+            debugPrint(
+              'RidesScreen: Ride status: ${widget.activeRide?.status}',
+            );
+          }
+        });
+      }
+    }
   }
 
   void _animateMarker() {
@@ -1112,26 +1183,37 @@ class _MapBackgroundState extends State<_MapBackground>
     if (_currentDriverPosition == null) return;
 
     // Small delay to allow panel animation to start
-    Future.delayed(const Duration(milliseconds: 100), () {
+    Future.delayed(const Duration(milliseconds: 150), () {
       if (!mounted) return;
 
-      // Pan map slightly to ensure driver marker and panel are visible
-      // The panel is 200px tall (marker height in MarkerLayer)
-      // We need to ensure the driver position is not too close to top edge
+      final camera = widget.mapController.camera;
+      final currentZoom = camera.zoom;
 
-      final currentZoom = widget.mapController.camera.zoom;
-
-      // Calculate offset to move driver marker down slightly if needed
-      // This ensures the panel above it remains visible
-      final latOffset =
-          0.002 * (15.0 / currentZoom); // Adjust based on zoom level
-
-      final newCenter = LatLng(
-        _currentDriverPosition!.latitude - latOffset,
-        _currentDriverPosition!.longitude,
+      // Project driver position to screen coordinates
+      final driverScreenPoint = camera.latLngToScreenPoint(
+        _currentDriverPosition!,
       );
 
-      widget.mapController.move(newCenter, currentZoom);
+      // Panel is ~160px tall + 48px gap above the car icon = ~210px total above driver point
+      // Only pan if the panel top would be clipped by the top edge (with some buffer)
+      const double panelHeightOnScreen = 220.0;
+      const double topEdgeBuffer = 20.0;
+
+      if (driverScreenPoint.y < panelHeightOnScreen + topEdgeBuffer) {
+        // Driver marker is too close to top — pan down so panel is visible
+        // Convert pixels to lat offset at current zoom
+        final neededPixels =
+            panelHeightOnScreen + topEdgeBuffer - driverScreenPoint.y;
+        // 1 pixel ≈ 360 / (256 * 2^zoom) degrees latitude
+        final degreesPerPixel = 360.0 / (256.0 * (1 << currentZoom.floor()));
+        final latOffset = neededPixels * degreesPerPixel;
+
+        final newCenter = LatLng(
+          camera.center.latitude - latOffset,
+          camera.center.longitude,
+        );
+        widget.mapController.move(newCenter, currentZoom);
+      }
     });
   }
 
