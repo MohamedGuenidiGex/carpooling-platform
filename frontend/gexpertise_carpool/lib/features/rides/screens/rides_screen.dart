@@ -431,18 +431,23 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
     return _selectedLocation ?? _currentPosition;
   }
 
-  /// Get the effective start address (selected location name or "Current Location")
-  String _getEffectiveStartAddress() {
-    return _selectedLocationName ?? 'Current Location';
-  }
-
   /// Start searching as Passenger (Find a Ride)
-  void _startPassengerSearch() {
+  Future<void> _startPassengerSearch() async {
     final startLocation = _getEffectiveStartLocation();
-    final startAddress = _getEffectiveStartAddress();
 
     // If a location is selected (or current position available), navigate directly
     if (startLocation != null) {
+      String startAddress;
+
+      // If using current position without a selected location name, perform reverse geocoding
+      if (_selectedLocationName == null && _currentPosition != null) {
+        startAddress = await OsmSearchService.getAddressFromCoordinates(
+          _currentPosition!,
+        );
+      } else {
+        startAddress = _selectedLocationName ?? 'Current Location';
+      }
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -465,12 +470,22 @@ class _RidesScreenState extends State<RidesScreen> with WidgetsBindingObserver {
   }
 
   /// Start searching as Driver (Offer a Ride)
-  void _startDriverSearch() {
+  Future<void> _startDriverSearch() async {
     final startLocation = _getEffectiveStartLocation();
-    final startAddress = _getEffectiveStartAddress();
 
     // If a location is selected (or current position available), navigate directly
     if (startLocation != null) {
+      String startAddress;
+
+      // If using current position without a selected location name, perform reverse geocoding
+      if (_selectedLocationName == null && _currentPosition != null) {
+        startAddress = await OsmSearchService.getAddressFromCoordinates(
+          _currentPosition!,
+        );
+      } else {
+        startAddress = _selectedLocationName ?? 'Current Location';
+      }
+
       Navigator.push(
         context,
         MaterialPageRoute(
