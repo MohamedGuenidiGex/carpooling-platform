@@ -214,123 +214,146 @@ class _NotificationCardState extends State<_NotificationCard> {
     final type = widget.notification.notificationType;
     final isLongMessage = widget.notification.message.length > 100;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        // Unread notifications have light red background
-        color: widget.notification.isRead ? Colors.white : Colors.red[50],
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: widget.notification.isRead
-              ? Colors.grey[200]!
-              : Colors.red[100]!,
+    return Dismissible(
+      key: Key('notification_${widget.notification.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.red,
+          borderRadius: BorderRadius.circular(16),
         ),
+        child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Icon Container
-          GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _handleMainAction,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: type.color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(type.icon, color: type.color, size: 24),
-            ),
+      onDismissed: (direction) async {
+        // Delete the notification
+        await context.read<NotificationProvider>().deleteNotification(
+          widget.notification.id,
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          // Unread notifications have light red background
+          color: widget.notification.isRead ? Colors.white : Colors.red[50],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: widget.notification.isRead
+                ? Colors.grey[200]!
+                : Colors.red[100]!,
           ),
-          const SizedBox(width: 16),
-          // Content - Tapping body triggers main action
-          Expanded(
-            child: GestureDetector(
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon Container
+            GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTap: _handleMainAction,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Type label as title
-                  Text(
-                    _getTypeLabel(widget.notification.type),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: BrandColors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // Expandable message text with smooth animation
-                  AnimatedCrossFade(
-                    firstChild: Text(
-                      widget.notification.message,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                        height: 1.4,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    secondChild: Text(
-                      widget.notification.message,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                        height: 1.4,
-                      ),
-                    ),
-                    crossFadeState: _isExpanded
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    duration: const Duration(milliseconds: 200),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        _formatTime(widget.notification.createdAt),
-                        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                      ),
-                      if (!widget.notification.isRead) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: BrandColors.primaryRed,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      // Show expand/collapse button for long messages
-                      // Arrow is tappable separately for expand/collapse only
-                      if (isLongMessage)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _toggleExpand,
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              _isExpanded
-                                  ? Icons.keyboard_arrow_up
-                                  : Icons.keyboard_arrow_down,
-                              size: 18,
-                              color: Colors.grey[400],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: type.color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(type.icon, color: type.color, size: 24),
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 16),
+            // Content - Tapping body triggers main action
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _handleMainAction,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Type label as title
+                    Text(
+                      _getTypeLabel(widget.notification.type),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: BrandColors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Expandable message text with smooth animation
+                    AnimatedCrossFade(
+                      firstChild: Text(
+                        widget.notification.message,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                          height: 1.4,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      secondChild: Text(
+                        widget.notification.message,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                          height: 1.4,
+                        ),
+                      ),
+                      crossFadeState: _isExpanded
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                      duration: const Duration(milliseconds: 200),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          _formatTime(widget.notification.createdAt),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                        if (!widget.notification.isRead) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: BrandColors.primaryRed,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        // Show expand/collapse button for long messages
+                        // Arrow is tappable separately for expand/collapse only
+                        if (isLongMessage)
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _toggleExpand,
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                _isExpanded
+                                    ? Icons.keyboard_arrow_up
+                                    : Icons.keyboard_arrow_down,
+                                size: 18,
+                                color: Colors.grey[400],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -181,11 +181,20 @@ class RideList(Resource):
         destination_lat = request.args.get('destination_lat', type=float)
         destination_lng = request.args.get('destination_lng', type=float)
         
-        # For passenger search (when coordinates are provided), exclude terminal and begun rides
+        # Validate coordinate parameters - both lat and lng must be provided together
+        has_origin_coords = origin_lat is not None and origin_lng is not None
+        has_dest_coords = destination_lat is not None and destination_lng is not None
+        
+        # Validate that if one coordinate is provided, both must be provided
+        if (origin_lat is not None) != (origin_lng is not None):
+            api.abort(400, 'Both origin_lat and origin_lng must be provided together')
+        if (destination_lat is not None) != (destination_lng is not None):
+            api.abort(400, 'Both destination_lat and destination_lng must be provided together')
+        
+        # For passenger search (when ANY coordinates are provided), exclude terminal and begun rides
         # Only show rides that are available for booking: scheduled, driver_en_route, arrived
         # Exclude: completed, missed, in_progress (ride has begun), cancelled
-        is_passenger_search = (origin_lat is not None and origin_lng is not None and 
-                              destination_lat is not None and destination_lng is not None)
+        is_passenger_search = has_origin_coords or has_dest_coords
         
         if is_passenger_search:
             # Exclude rides that are completed, missed, in_progress, or cancelled
@@ -197,25 +206,19 @@ class RideList(Resource):
         pickup_radius = request.args.get('pickup_radius_km', type=float, default=PICKUP_RADIUS_KM)
         destination_radius = request.args.get('destination_radius_km', type=float, default=DESTINATION_RADIUS_KM)
         
-        # Validate coordinate parameters
-        has_origin_coords = origin_lat is not None and origin_lng is not None
-        has_dest_coords = destination_lat is not None and destination_lng is not None
-        
-        if has_origin_coords and not has_dest_coords:
-            api.abort(400, 'Both destination_lat and destination_lng are required when origin coordinates are provided')
-        if has_dest_coords and not has_origin_coords:
-            api.abort(400, 'Both origin_lat and origin_lng are required when destination coordinates are provided')
-        
         # Store coordinate search params for post-query filtering
+        # Support three scenarios: origin-only, destination-only, or both
         coordinate_search = None
-        if has_origin_coords and has_dest_coords:
+        if has_origin_coords or has_dest_coords:
             coordinate_search = {
                 'origin_lat': origin_lat,
                 'origin_lng': origin_lng,
                 'destination_lat': destination_lat,
                 'destination_lng': destination_lng,
                 'pickup_radius_km': pickup_radius,
-                'destination_radius_km': destination_radius
+                'destination_radius_km': destination_radius,
+                'has_origin': has_origin_coords,
+                'has_dest': has_dest_coords
             }
 
         # Driver filter (for getting my offered rides)

@@ -507,14 +507,31 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
           ),
         );
       },
-      onSelected: (suggestion) {
+      onSelected: (suggestion) async {
+        final isCurrentLocation = suggestion['is_current_location'] == true;
+        final coordinates = LatLng(
+          suggestion['lat'] as double,
+          suggestion['lon'] as double,
+        );
+
         setState(() {
-          _originController.text = suggestion['display_name'] as String;
-          _originCoordinates = LatLng(
-            suggestion['lat'] as double,
-            suggestion['lon'] as double,
-          );
+          _originCoordinates = coordinates;
         });
+
+        // If current location, perform reverse geocoding to get real place name
+        if (isCurrentLocation) {
+          final address = await LocationSearchService.getAddressFromCoordinates(
+            coordinates,
+          );
+          setState(() {
+            _originController.text = address;
+          });
+        } else {
+          setState(() {
+            _originController.text = suggestion['display_name'] as String;
+          });
+        }
+
         // Calculate route when both points are available
         _calculateRoute();
       },
@@ -611,14 +628,31 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
           ),
         );
       },
-      onSelected: (suggestion) {
+      onSelected: (suggestion) async {
+        final isCurrentLocation = suggestion['is_current_location'] == true;
+        final coordinates = LatLng(
+          suggestion['lat'] as double,
+          suggestion['lon'] as double,
+        );
+
         setState(() {
-          _destinationController.text = suggestion['display_name'] as String;
-          _destinationCoordinates = LatLng(
-            suggestion['lat'] as double,
-            suggestion['lon'] as double,
-          );
+          _destinationCoordinates = coordinates;
         });
+
+        // If current location, perform reverse geocoding to get real place name
+        if (isCurrentLocation) {
+          final address = await LocationSearchService.getAddressFromCoordinates(
+            coordinates,
+          );
+          setState(() {
+            _destinationController.text = address;
+          });
+        } else {
+          setState(() {
+            _destinationController.text = suggestion['display_name'] as String;
+          });
+        }
+
         // Calculate route when both points are available
         _calculateRoute();
       },

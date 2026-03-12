@@ -90,6 +90,31 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  /// Delete a single notification
+  Future<bool> deleteNotification(int notificationId) async {
+    // Optimistically remove from local state
+    final previous = _notifications;
+    _notifications = _notifications
+        .where((n) => n.id != notificationId)
+        .toList();
+    notifyListeners();
+
+    try {
+      await ApiClient.delete('/notifications/$notificationId');
+      return true;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      _notifications = previous;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Failed to delete notification: $e';
+      _notifications = previous;
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Clear all notifications locally
   void clearAll() {
     _notifications = [];

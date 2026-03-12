@@ -73,35 +73,71 @@ def matches_ride_location(search_origin_lat, search_origin_lng,
     """
     Check if a ride matches search coordinates within configured radii.
     
-    This is the primary function for coordinate-based ride matching.
+    Supports three search scenarios:
+    1. Origin-only: Only search_origin_lat/lng provided
+    2. Destination-only: Only search_dest_lat/lng provided
+    3. Both: Both origin and destination provided
     
     Args:
-        search_origin_lat, search_origin_lng: Passenger's pickup location
-        search_dest_lat, search_dest_lng: Passenger's destination
+        search_origin_lat, search_origin_lng: Passenger's pickup location (can be None)
+        search_dest_lat, search_dest_lng: Passenger's destination (can be None)
         ride_origin_lat, ride_origin_lng: Ride's origin coordinates
         ride_dest_lat, ride_dest_lng: Ride's destination coordinates
         pickup_radius_km: Maximum distance for origin match (default: PICKUP_RADIUS_KM)
         destination_radius_km: Maximum distance for destination match (default: DESTINATION_RADIUS_KM)
         
     Returns:
-        True if both origin and destination are within their respective radii
+        True if the ride matches the search criteria
     """
-    # Check if any coordinates are missing
-    if None in [search_origin_lat, search_origin_lng, search_dest_lat, search_dest_lng,
-                ride_origin_lat, ride_origin_lng, ride_dest_lat, ride_dest_lng]:
+    # Determine which coordinates are provided
+    has_search_origin = search_origin_lat is not None and search_origin_lng is not None
+    has_search_dest = search_dest_lat is not None and search_dest_lng is not None
+    
+    # If no search coordinates provided, don't match (invalid search)
+    if not has_search_origin and not has_search_dest:
         return False
     
-    # Both origin and destination must be within their respective radii
-    origin_match = is_within_radius(
-        search_origin_lat, search_origin_lng,
-        ride_origin_lat, ride_origin_lng,
-        pickup_radius_km
-    )
+    # Check if ride has required coordinates
+    has_ride_origin = ride_origin_lat is not None and ride_origin_lng is not None
+    has_ride_dest = ride_dest_lat is not None and ride_dest_lng is not None
     
-    destination_match = is_within_radius(
-        search_dest_lat, search_dest_lng,
-        ride_dest_lat, ride_dest_lng,
-        destination_radius_km
-    )
+    # Scenario 1: Origin-only search
+    if has_search_origin and not has_search_dest:
+        if not has_ride_origin:
+            return False
+        return is_within_radius(
+            search_origin_lat, search_origin_lng,
+            ride_origin_lat, ride_origin_lng,
+            pickup_radius_km
+        )
     
-    return origin_match and destination_match
+    # Scenario 2: Destination-only search
+    if has_search_dest and not has_search_origin:
+        if not has_ride_dest:
+            return False
+        return is_within_radius(
+            search_dest_lat, search_dest_lng,
+            ride_dest_lat, ride_dest_lng,
+            destination_radius_km
+        )
+    
+    # Scenario 3: Both origin and destination search
+    if has_search_origin and has_search_dest:
+        if not has_ride_origin or not has_ride_dest:
+            return False
+        
+        origin_match = is_within_radius(
+            search_origin_lat, search_origin_lng,
+            ride_origin_lat, ride_origin_lng,
+            pickup_radius_km
+        )
+        
+        destination_match = is_within_radius(
+            search_dest_lat, search_dest_lng,
+            ride_dest_lat, ride_dest_lng,
+            destination_radius_km
+        )
+        
+        return origin_match and destination_match
+    
+    return False

@@ -330,19 +330,37 @@ class _FindRideScreenState extends State<FindRideScreen> {
           ),
         );
       },
-      onSelected: (suggestion) {
-        setState(() {
-          _originController.text = LocationSearchService.getDisplayName(
-            suggestion,
-          );
-          // Store origin coordinates for route calculation
-          final lat = suggestion['lat'] as double;
-          final lon = suggestion['lon'] as double;
-          _originCoordinates = LatLng(lat, lon);
+      onSelected: (suggestion) async {
+        final isCurrentLocation = LocationSearchService.isCurrentLocationOption(
+          suggestion,
+        );
+        final lat = suggestion['lat'] as double;
+        final lon = suggestion['lon'] as double;
+        final coordinates = LatLng(lat, lon);
 
-          print('FindRideScreen: Origin selected - lat: $lat, lon: $lon');
-          print('FindRideScreen: Origin LatLng object: $_originCoordinates');
+        setState(() {
+          _originCoordinates = coordinates;
         });
+
+        // If current location, perform reverse geocoding to get real place name
+        if (isCurrentLocation) {
+          final address = await LocationSearchService.getAddressFromCoordinates(
+            coordinates,
+          );
+          setState(() {
+            _originController.text = address;
+          });
+        } else {
+          setState(() {
+            _originController.text = LocationSearchService.getDisplayName(
+              suggestion,
+            );
+          });
+        }
+
+        print('FindRideScreen: Origin selected - lat: $lat, lon: $lon');
+        print('FindRideScreen: Origin LatLng object: $_originCoordinates');
+
         // Recalculate route if destination is already set
         if (_destinationCoordinates != null) {
           _calculateRoute();
@@ -438,21 +456,40 @@ class _FindRideScreenState extends State<FindRideScreen> {
           ),
         );
       },
-      onSelected: (suggestion) {
+      onSelected: (suggestion) async {
+        final isCurrentLocation = LocationSearchService.isCurrentLocationOption(
+          suggestion,
+        );
+        final lat = suggestion['lat'] as double;
+        final lon = suggestion['lon'] as double;
+        final coordinates = LatLng(lat, lon);
+
         setState(() {
-          _destinationController.text = suggestion['display_name'] as String;
-          final lat = suggestion['lat'] as double;
-          final lon = suggestion['lon'] as double;
-          _destinationCoordinates = LatLng(lat, lon);
-
-          print('FindRideScreen: Destination selected - lat: $lat, lon: $lon');
-          print(
-            'FindRideScreen: Destination LatLng object: $_destinationCoordinates',
-          );
-
-          // Move map to show the destination
-          _mapController.move(_destinationCoordinates!, 13.0);
+          _destinationCoordinates = coordinates;
         });
+
+        // If current location, perform reverse geocoding to get real place name
+        if (isCurrentLocation) {
+          final address = await LocationSearchService.getAddressFromCoordinates(
+            coordinates,
+          );
+          setState(() {
+            _destinationController.text = address;
+          });
+        } else {
+          setState(() {
+            _destinationController.text = suggestion['display_name'] as String;
+          });
+        }
+
+        print('FindRideScreen: Destination selected - lat: $lat, lon: $lon');
+        print(
+          'FindRideScreen: Destination LatLng object: $_destinationCoordinates',
+        );
+
+        // Move map to show the destination
+        _mapController.move(coordinates, 13.0);
+
         // Calculate route when both points are available
         _calculateRoute();
       },
