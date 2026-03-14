@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.extensions import db, socketio
 from app.models import Reservation, Ride, Employee, Notification
+from app.models.system_event import log_system_event
 from app.utils.logger import log_action
 from app.realtime_events import emit_ride_status_update
 from app.services.boarding_service import confirm_boarding, check_and_expire_boarding_deadlines
@@ -249,9 +250,20 @@ class ReservationList(Resource):
             )
             db.session.add(driver_notification)
             
+            # Log system event for reservation requested
+            log_system_event(
+                event_type='RESERVATION_REQUESTED',
+                entity_type='reservation',
+                description=f'{passenger_name} requested {seats_reserved} seat(s) for ride #{ride.id}',
+                user_id=employee_id,
+                ride_id=ride.id,
+                reservation_id=reservation.id,
+                metadata={'seats_reserved': seats_reserved, 'status': 'PENDING'}
+            )
+            
             db.session.commit()
 
-            # Log reservation creation
+            # Log reservation creation (console)
             log_action(
                 action='RESERVATION_CREATED',
                 employee_id=employee_id,
@@ -382,9 +394,21 @@ class ReservationCancel(Resource):
             )
             db.session.add(cancel_notification)
         
+        # Log system event for reservation cancellation
+        passenger = Employee.query.get(employee_id)
+        log_system_event(
+            event_type='RESERVATION_CANCELLED',
+            entity_type='reservation',
+            description=f'{passenger.name if passenger else "Passenger"} cancelled reservation for ride #{reservation.ride_id}',
+            user_id=employee_id,
+            ride_id=reservation.ride_id,
+            reservation_id=reservation.id,
+            metadata={'seats_reserved': reservation.seats_reserved}
+        )
+        
         db.session.commit()
 
-        # Log reservation cancellation
+        # Log reservation cancellation (console)
         log_action(
             action='RESERVATION_CANCELLED',
             employee_id=employee_id,
@@ -454,9 +478,22 @@ class ReservationApprove(Resource):
             )
             db.session.add(notification)
             
+            # Log system event for reservation confirmation
+            passenger = Employee.query.get(reservation.employee_id)
+            driver = Employee.query.get(employee_id)
+            log_system_event(
+                event_type='RESERVATION_CONFIRMED',
+                entity_type='reservation',
+                description=f'{driver.name if driver else "Driver"} confirmed {passenger.name if passenger else "passenger"}\'s reservation for ride #{ride.id}',
+                user_id=employee_id,
+                ride_id=ride.id,
+                reservation_id=reservation.id,
+                metadata={'seats_reserved': reservation.seats_reserved}
+            )
+            
             db.session.commit()
 
-            # Log reservation approval
+            # Log reservation approval (console)
             log_action(
                 action='RESERVATION_APPROVED',
                 employee_id=employee_id,
@@ -636,6 +673,19 @@ class ReservationConfirmBoarding(Resource):
             success, message = confirm_boarding(id, employee_id)
             
             if success:
+                # Log system event for passenger boarding
+                reservation = Reservation.query.get(id)
+                passenger = Employee.query.get(employee_id)
+                if reservation:
+                    log_system_event(
+                        event_type='PASSENGER_BOARDED',
+                        entity_type='reservation',
+                        description=f'{passenger.name if passenger else "Passenger"} boarded ride #{reservation.ride_id}',
+                        user_id=employee_id,
+                        ride_id=reservation.ride_id,
+                        reservation_id=id
+                    )
+                
                 log_action(
                     action='BOARDING_CONFIRMED',
                     employee_id=employee_id,

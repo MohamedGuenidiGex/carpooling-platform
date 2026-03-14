@@ -7,6 +7,7 @@ import logging
 
 from app.extensions import db, socketio
 from app.models import Ride, Employee, Reservation, Notification
+from app.models.system_event import log_system_event
 from app.utils.logger import log_action
 from app.utils.geo import matches_ride_location, PICKUP_RADIUS_KM, DESTINATION_RADIUS_KM
 from app.realtime_events import emit_ride_status_update
@@ -401,9 +402,20 @@ class RideList(Resource):
             available_seats=data['available_seats']
         )
         db.session.add(ride)
+        
+        # Log system event for ride creation
+        log_system_event(
+            event_type='RIDE_CREATED',
+            entity_type='ride',
+            description=f'{driver.name} created ride from {ride.origin} to {ride.destination}',
+            user_id=driver_id,
+            ride_id=ride.id,
+            metadata={'origin': ride.origin, 'destination': ride.destination, 'seats': ride.available_seats}
+        )
+        
         db.session.commit()
 
-        # Log ride creation
+        # Log ride creation (console logging)
         log_action(
             action='RIDE_CREATED',
             employee_id=driver_id,
@@ -686,6 +698,18 @@ class RideBegin(Resource):
             
             ride.status = 'in_progress'
             ride.updated_at = datetime.utcnow()
+            
+            # Log system event for ride started
+            driver = Employee.query.get(employee_id)
+            log_system_event(
+                event_type='RIDE_STARTED',
+                entity_type='ride',
+                description=f'{driver.name if driver else "Driver"} started ride #{ride.id}',
+                user_id=employee_id,
+                ride_id=ride.id,
+                metadata={'origin': ride.origin, 'destination': ride.destination}
+            )
+            
             db.session.commit()
             
             # Schedule a check for boarding deadline expiration
@@ -753,6 +777,17 @@ class RideComplete(Resource):
             
             for reservation in reservations:
                 reservation.status = 'COMPLETED'
+            
+            # Log system event for ride completion
+            driver = Employee.query.get(employee_id)
+            log_system_event(
+                event_type='RIDE_COMPLETED',
+                entity_type='ride',
+                description=f'{driver.name if driver else "Driver"} completed ride #{ride.id}',
+                user_id=employee_id,
+                ride_id=ride.id,
+                metadata={'reservations_completed': len(reservations)}
+            )
             
             db.session.commit()
             
@@ -836,9 +871,20 @@ class RideCancel(Resource):
                 )
                 db.session.add(notification)
             
+            # Log system event for ride cancellation
+            driver = Employee.query.get(employee_id)
+            log_system_event(
+                event_type='RIDE_CANCELLED',
+                entity_type='ride',
+                description=f'{driver.name if driver else "Driver"} cancelled ride #{ride.id}',
+                user_id=employee_id,
+                ride_id=ride.id,
+                metadata={'reservations_cancelled': len(reservations)}
+            )
+            
             db.session.commit()
             
-            # Log ride cancellation
+            # Log ride cancellation (console)
             log_action(
                 action='RIDE_CANCELLED',
                 employee_id=employee_id,

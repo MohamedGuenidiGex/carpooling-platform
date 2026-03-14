@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/brand_colors.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../../support/screens/about_screen.dart';
-import '../../support/screens/support_screen.dart';
+import '../screens/admin_dashboard_screen.dart';
+import '../screens/analytics_screen.dart';
+import '../screens/system_events_screen.dart';
+import '../screens/user_management_screen.dart';
 
-/// Admin Navigation Drawer - Same design as employee drawer
+/// Admin Navigation Drawer - Modern admin navigation
 ///
-/// Clean, premium side menu with seamless header, refined menu items,
-/// and floating pill-shaped logout button.
+/// Clean navigation with Dashboard, User Management, Analytics, System Events
 class AdminDrawer extends StatelessWidget {
   const AdminDrawer({super.key});
 
@@ -29,7 +30,7 @@ class AdminDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // User Profile Header - Clean & Airy
+            // User Profile Header
             Padding(
               padding: const EdgeInsets.only(
                 top: 40,
@@ -39,7 +40,6 @@ class AdminDrawer extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  // Profile Avatar
                   CircleAvatar(
                     radius: 36,
                     backgroundColor: BrandColors.primaryRed.withOpacity(0.1),
@@ -50,7 +50,6 @@ class AdminDrawer extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 20),
-                  // User Info
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,7 +79,7 @@ class AdminDrawer extends StatelessWidget {
               ),
             ),
 
-            // Menu Items - Refined & Spaced
+            // Menu Items
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -90,30 +89,50 @@ class AdminDrawer extends StatelessWidget {
                     title: 'Dashboard',
                     onTap: () {
                       Navigator.pop(context);
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AdminDashboardScreen(),
+                        ),
+                        (route) => route.isFirst,
+                      );
                     },
                   ),
                   _buildMenuItem(
-                    icon: Icons.support_agent_outlined,
-                    title: 'Support',
+                    icon: Icons.manage_accounts_outlined,
+                    title: 'User Management',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const SupportScreen(),
+                          builder: (_) => const UserManagementScreen(),
                         ),
                       );
                     },
                   ),
                   _buildMenuItem(
-                    icon: Icons.info_outline,
-                    title: 'About',
+                    icon: Icons.analytics_outlined,
+                    title: 'Analytics',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const AboutScreen(),
+                          builder: (_) => const AnalyticsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.event_note_outlined,
+                    title: 'System Events',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SystemEventsScreen(),
                         ),
                       );
                     },
@@ -146,13 +165,8 @@ class AdminDrawer extends StatelessWidget {
                   borderRadius: BorderRadius.circular(30),
                   child: InkWell(
                     onTap: () async {
-                      debugPrint('AdminDrawer: Logout button tapped');
                       Navigator.pop(context);
-                      debugPrint(
-                        'AdminDrawer: Calling AuthProvider.logout()...',
-                      );
                       await context.read<AuthProvider>().logout(context);
-                      debugPrint('AdminDrawer: Logout completed');
                     },
                     borderRadius: BorderRadius.circular(30),
                     child: Padding(

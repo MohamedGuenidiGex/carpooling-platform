@@ -5,20 +5,102 @@ import '../models/monitoring_overview.dart';
 /// Admin Monitoring Service
 /// Handles API calls for admin real-time monitoring dashboard.
 class AdminMonitoringService {
-  /// Fetch monitoring overview from API
+  /// Fetch complete monitoring overview from multiple endpoints
   static Future<MonitoringOverview> fetchMonitoringOverview() async {
     try {
-      debugPrint('AdminMonitoringService: Calling /admin/monitoring/overview');
-      final response = await ApiClient.get('/admin/monitoring/overview');
-      debugPrint('AdminMonitoringService: Response received: $response');
+      debugPrint(
+        'AdminMonitoringService: Fetching monitoring data from new endpoints',
+      );
 
-      if (response is Map<String, dynamic>) {
-        return MonitoringOverview.fromJson(response);
-      }
+      // Fetch system health
+      final healthResponse = await ApiClient.get('/admin/system-health');
+      debugPrint(
+        'AdminMonitoringService: System health received: $healthResponse',
+      );
 
-      throw Exception('Invalid response format from monitoring API');
+      // Fetch dashboard metrics
+      final metricsResponse = await ApiClient.get('/admin/dashboard-metrics');
+      debugPrint(
+        'AdminMonitoringService: Dashboard metrics received: $metricsResponse',
+      );
+
+      // Fetch recent events (limit 5 for dashboard preview)
+      final eventsResponse = await ApiClient.get('/admin/events?limit=5');
+      debugPrint(
+        'AdminMonitoringService: Recent events received: $eventsResponse',
+      );
+
+      // Combine into overview format
+      final combinedResponse = {
+        'system_health': healthResponse,
+        'live_metrics': metricsResponse,
+        'recent_events': eventsResponse is List ? eventsResponse : [],
+      };
+
+      return MonitoringOverview.fromJson(combinedResponse);
     } catch (e) {
       debugPrint('AdminMonitoringService: Error fetching monitoring data: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch system health only
+  static Future<SystemHealth> fetchSystemHealth() async {
+    try {
+      debugPrint('AdminMonitoringService: Fetching system health');
+      final response = await ApiClient.get('/admin/system-health');
+      return SystemHealth.fromJson(response);
+    } catch (e) {
+      debugPrint('AdminMonitoringService: Error fetching system health: $e');
+      // Return degraded health on error
+      return SystemHealth(
+        api: 'down',
+        database: 'down',
+        websocket: 'unknown',
+        osrm: 'unknown',
+        gpsStream: 'unknown',
+        checkedAt: DateTime.now().toIso8601String(),
+      );
+    }
+  }
+
+  /// Fetch dashboard metrics only
+  static Future<LiveMetrics> fetchDashboardMetrics() async {
+    try {
+      debugPrint('AdminMonitoringService: Fetching dashboard metrics');
+      final response = await ApiClient.get('/admin/dashboard-metrics');
+      return LiveMetrics.fromJson(response);
+    } catch (e) {
+      debugPrint(
+        'AdminMonitoringService: Error fetching dashboard metrics: $e',
+      );
+      rethrow;
+    }
+  }
+
+  /// Fetch system events with pagination
+  static Future<List<SystemEvent>> fetchSystemEvents({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    try {
+      debugPrint(
+        'AdminMonitoringService: Fetching system events (limit: $limit, offset: $offset)',
+      );
+      final response = await ApiClient.get(
+        '/admin/events?limit=$limit&offset=$offset',
+      );
+
+      if (response is List) {
+        return response
+            .whereType<Map<String, dynamic>>()
+            .map(SystemEvent.fromJson)
+            .toList();
+      }
+
+      return [];
+    } catch (e) {
+      debugPrint('AdminMonitoringService: Error fetching system events: $e');
       rethrow;
     }
   }

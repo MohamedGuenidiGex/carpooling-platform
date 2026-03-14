@@ -362,12 +362,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     const SizedBox(height: 12),
                     _ChartCard(
                       title: 'User Growth',
-                      subtitle: 'Reservations per day • $timeframeLabel',
+                      subtitle:
+                          'Employee registrations over time • $timeframeLabel',
                       child: _BarChart(
-                        color: Colors.green,
+                        color: BrandColors.success,
                         values: (trends == null)
                             ? null
-                            : trends.reservationsPerDay
+                            : trends.userGrowthPerDay
                                   .map((e) => e.count.toDouble())
                                   .toList(),
                       ),
@@ -382,21 +383,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         cancelled: statusDist?.cancelled,
                       ),
                     ),
-                    const SizedBox(height: 24),
-
-                    _SectionHeader(
-                      title: 'Live System Status',
-                      subtitle: 'Operational health',
+                    const SizedBox(height: 12),
+                    _TopRoutesCard(
+                      routes: analyticsProvider.topRoutes,
+                      isLoading: isLoading,
+                      onFilterChanged: (country) {
+                        analyticsProvider.fetchTopRoutesFiltered(
+                          country: country,
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
-                    _SystemStatusPanel(
-                      statusText: isLoading || analytics == null
-                          ? 'Loading status…'
-                          : 'All systems ${analytics.systemStatus}',
-                      isHealthy:
-                          !isLoading &&
-                          analytics?.systemStatus == 'operational',
-                      lastUpdated: now,
+                    _ChartCard(
+                      title: 'Reservation Funnel',
+                      subtitle: 'Conversion through reservation lifecycle',
+                      child: _ReservationFunnelChart(
+                        funnel: analyticsProvider.reservationFunnel,
+                        isLoading: isLoading,
+                      ),
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -923,6 +927,369 @@ class _EmptyChartPlaceholder extends StatelessWidget {
           color: Colors.grey[600],
         ),
       ),
+    );
+  }
+}
+
+class _TopRoutesCard extends StatefulWidget {
+  const _TopRoutesCard({
+    required this.routes,
+    required this.isLoading,
+    required this.onFilterChanged,
+  });
+
+  final List<Map<String, dynamic>>? routes;
+  final bool isLoading;
+  final Function(String?) onFilterChanged;
+
+  @override
+  State<_TopRoutesCard> createState() => _TopRoutesCardState();
+}
+
+class _TopRoutesCardState extends State<_TopRoutesCard> {
+  String? _selectedCountry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: BrandColors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Top Routes',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: BrandColors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Most frequent origin → destination pairs',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _FilterButton(
+                label: 'All',
+                isSelected: _selectedCountry == null,
+                onTap: () {
+                  setState(() => _selectedCountry = null);
+                  widget.onFilterChanged(null);
+                },
+              ),
+              const SizedBox(width: 8),
+              _FilterButton(
+                label: 'Tunisia',
+                isSelected: _selectedCountry == 'tunisia',
+                onTap: () {
+                  setState(() => _selectedCountry = 'tunisia');
+                  widget.onFilterChanged('tunisia');
+                },
+              ),
+              const SizedBox(width: 8),
+              _FilterButton(
+                label: 'France',
+                isSelected: _selectedCountry == 'france',
+                onTap: () {
+                  setState(() => _selectedCountry = 'france');
+                  widget.onFilterChanged('france');
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 220,
+            child: _TopRoutesList(
+              routes: widget.routes,
+              isLoading: widget.isLoading,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterButton extends StatelessWidget {
+  const _FilterButton({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? BrandColors.primaryRed : Colors.grey[200],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: isSelected ? BrandColors.white : Colors.grey[700],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TopRoutesList extends StatelessWidget {
+  const _TopRoutesList({required this.routes, required this.isLoading});
+
+  final List<Map<String, dynamic>>? routes;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading || routes == null) {
+      return const _EmptyChartPlaceholder();
+    }
+
+    if (routes!.isEmpty) {
+      return Center(
+        child: Text(
+          'No route data available',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[600],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: routes!.take(3).toList().asMap().entries.map((entry) {
+        final index = entry.key;
+        final route = entry.value;
+        final origin = route['origin']?.toString() ?? 'Unknown';
+        final destination = route['destination']?.toString() ?? 'Unknown';
+        final rides = route['rides'] as int? ?? 0;
+
+        return Padding(
+          padding: EdgeInsets.only(bottom: index < 2 ? 12 : 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: BrandColors.primaryRed.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: BrandColors.primaryRed,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      origin,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: BrandColors.black,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.arrow_forward,
+                          size: 12,
+                          color: Colors.grey[500],
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            destination,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: BrandColors.black,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$rides rides',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _ReservationFunnelChart extends StatelessWidget {
+  const _ReservationFunnelChart({
+    required this.funnel,
+    required this.isLoading,
+  });
+
+  final Map<String, dynamic>? funnel;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading || funnel == null) {
+      return const _EmptyChartPlaceholder();
+    }
+
+    final requested = funnel!['requested'] as int? ?? 0;
+    final confirmed = funnel!['confirmed'] as int? ?? 0;
+    final boarded = funnel!['boarded'] as int? ?? 0;
+
+    if (requested == 0 && confirmed == 0 && boarded == 0) {
+      return Center(
+        child: Text(
+          'No reservation data available',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[600],
+          ),
+        ),
+      );
+    }
+
+    final maxValue = requested > 0 ? requested : 1;
+
+    Widget funnelBar(String label, int value, Color color) {
+      final percentage = (value / maxValue * 100).round();
+      final width = value / maxValue;
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: BrandColors.black,
+                  ),
+                ),
+                Text(
+                  '$value ($percentage%)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    height: 24,
+                    width: constraints.maxWidth,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        width: constraints.maxWidth * width,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        funnelBar('Requested', requested, BrandColors.primaryRed),
+        funnelBar('Confirmed', confirmed, BrandColors.darkRed),
+        funnelBar('Boarded', boarded, BrandColors.success),
+      ],
     );
   }
 }

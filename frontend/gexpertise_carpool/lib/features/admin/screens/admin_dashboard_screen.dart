@@ -6,6 +6,7 @@ import '../models/monitoring_overview.dart';
 import '../providers/admin_monitoring_provider.dart';
 import '../widgets/admin_drawer.dart';
 import 'analytics_screen.dart';
+import 'system_events_screen.dart';
 import 'user_management_screen.dart';
 
 /// Admin Dashboard Screen - Modern Monitoring Console
@@ -76,50 +77,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
               ),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverGrid.count(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.4,
-                  children: [
-                    _LiveMetricCard(
-                      icon: Icons.directions_car_outlined,
-                      label: 'Active Rides Now',
-                      value: overview?.liveMetrics.activeRidesNow ?? 0,
-                      color: Colors.blue,
-                      isLoading: isLoading,
-                    ),
-                    _LiveMetricCard(
-                      icon: Icons.people_outline,
-                      label: 'Online Users',
-                      value: overview?.liveMetrics.onlineUsers ?? 0,
-                      color: BrandColors.primaryRed,
-                      isLoading: isLoading,
-                    ),
-                    _LiveMetricCard(
-                      icon: Icons.pending_actions_outlined,
-                      label: 'Pending Requests',
-                      value: overview?.liveMetrics.pendingRequests ?? 0,
-                      color: Colors.orange,
-                      isLoading: isLoading,
-                      microIndicator:
-                          overview?.liveMetrics.pendingRequests != null &&
-                              overview!.liveMetrics.pendingRequests > 0
-                          ? 'needs attention'
-                          : null,
-                    ),
-                    _LiveMetricCard(
-                      icon: Icons.devices_outlined,
-                      label: 'Active Sessions',
-                      value: overview?.liveMetrics.activeSessions ?? 0,
-                      color: Colors.purple,
-                      isLoading: isLoading,
-                    ),
-                  ],
-                ),
-              ),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
@@ -163,7 +120,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                  child: _SectionTitle(title: 'Recent System Events'),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SectionTitle(title: 'Recent System Events'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SystemEventsScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text(
+                          'View All',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               SliverToBoxAdapter(
@@ -236,11 +213,6 @@ class _TopBar extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          _StatusIndicator(
-            status: isLoading ? 'loading' : systemStatus,
-            isHealthy: isHealthy,
-            isLoading: isLoading,
           ),
         ],
       ),
@@ -359,6 +331,7 @@ class _SystemHealthCard extends StatefulWidget {
 
 class _SystemHealthCardState extends State<_SystemHealthCard> {
   bool _pressed = false;
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -366,6 +339,7 @@ class _SystemHealthCardState extends State<_SystemHealthCard> {
     final isDegraded = widget.health?.isDegraded ?? false;
 
     return GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
       onTapDown: (_) => setState(() => _pressed = true),
       onTapCancel: () => setState(() => _pressed = false),
       onTapUp: (_) => setState(() => _pressed = false),
@@ -381,6 +355,12 @@ class _SystemHealthCardState extends State<_SystemHealthCard> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 )
+              : isHealthy
+              ? const LinearGradient(
+                  colors: [Color(0xFF10B981), Color(0xFF059669)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
               : const LinearGradient(
                   colors: [BrandColors.primaryRed, BrandColors.darkRed],
                   begin: Alignment.topLeft,
@@ -389,8 +369,13 @@ class _SystemHealthCardState extends State<_SystemHealthCard> {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: (isDegraded ? Colors.orange : BrandColors.primaryRed)
-                  .withAlpha(((_pressed ? 0.35 : 0.25) * 255).round()),
+              color:
+                  (isDegraded
+                          ? Colors.orange
+                          : isHealthy
+                          ? const Color(0xFF10B981)
+                          : BrandColors.primaryRed)
+                      .withAlpha(((_pressed ? 0.35 : 0.25) * 255).round()),
               blurRadius: _pressed ? 18 : 14,
               offset: const Offset(0, 8),
             ),
@@ -421,7 +406,7 @@ class _SystemHealthCardState extends State<_SystemHealthCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'System Status',
+                        'System Health',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 13,
@@ -451,15 +436,51 @@ class _SystemHealthCardState extends State<_SystemHealthCard> {
                     ],
                   ),
                 ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.white70,
+                  size: 24,
+                ),
               ],
             ),
-            const SizedBox(height: 16),
+            // Component health details (visible when expanded)
+            if (_expanded && !widget.isLoading && widget.health != null) ...[
+              const SizedBox(height: 16),
+              const Divider(color: Colors.white24, height: 1),
+              const SizedBox(height: 12),
+              _buildComponentRow(
+                'API Server',
+                widget.health!.api,
+                Icons.cloud_outlined,
+              ),
+              _buildComponentRow(
+                'Database',
+                widget.health!.database,
+                Icons.storage_outlined,
+              ),
+              _buildComponentRow(
+                'WebSocket',
+                widget.health!.websocket,
+                Icons.sync_alt_outlined,
+              ),
+              _buildComponentRow(
+                'OSRM Routing',
+                widget.health!.osrm,
+                Icons.map_outlined,
+              ),
+              _buildComponentRow(
+                'GPS Stream',
+                widget.health!.gpsStream,
+                Icons.gps_fixed_outlined,
+              ),
+            ],
+            const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
               child: Text(
                 widget.isLoading
                     ? 'Updating...'
-                    : 'Last updated: ${widget.health?.lastUpdated != null ? _timeAgo(widget.health!.lastUpdated) : 'never'}',
+                    : 'Last checked: ${_timeAgo(widget.health?.checkedAt ?? '')}',
                 style: TextStyle(
                   color: Colors.white.withAlpha(178),
                   fontSize: 12,
@@ -469,6 +490,43 @@ class _SystemHealthCardState extends State<_SystemHealthCard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildComponentRow(String label, String status, IconData icon) {
+    final color = SystemHealth.getStatusColor(status);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white70, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            status,
+            style: TextStyle(
+              color: Colors.white.withAlpha(204),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -845,6 +903,8 @@ class _RecentEventsList extends StatelessWidget {
       );
     }
 
+    final displayEvents = events.take(3).toList();
+
     return Container(
       decoration: BoxDecoration(
         color: BrandColors.white,
@@ -859,9 +919,9 @@ class _RecentEventsList extends StatelessWidget {
       ),
       child: Column(
         children: [
-          for (var i = 0; i < events.length; i++) ...[
-            _EventItem(event: events[i]),
-            if (i < events.length - 1)
+          for (var i = 0; i < displayEvents.length; i++) ...[
+            _EventItem(event: displayEvents[i]),
+            if (i < displayEvents.length - 1)
               Divider(height: 1, color: Colors.black.withOpacity(0.06)),
           ],
         ],
@@ -878,7 +938,7 @@ class _EventItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final icon = _getEventIcon(event.eventType);
-    final color = _getSeverityColor(event.severity);
+    final color = _getSeverityColor(event.severity ?? 'info');
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

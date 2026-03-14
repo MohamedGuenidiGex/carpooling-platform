@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/brand_colors.dart';
 import '../providers/admin_provider.dart';
+import 'admin_user_details_screen.dart';
 
 /// User Management Screen - Admin interface for managing users
 ///
@@ -68,7 +69,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 builder: (context, adminProvider, child) {
                   if (adminProvider.isLoading) {
                     return const Center(
-                      child: CircularProgressIndicator(color: BrandColors.primaryRed),
+                      child: CircularProgressIndicator(
+                        color: BrandColors.primaryRed,
+                      ),
                     );
                   }
 
@@ -77,7 +80,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
+                          Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: Colors.grey[400],
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             adminProvider.errorMessage!,
@@ -98,14 +105,20 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     );
                   }
 
-                  final filteredUsers = adminProvider.getFilteredUsers(_searchController.text);
+                  final filteredUsers = adminProvider.getFilteredUsers(
+                    _searchController.text,
+                  );
 
                   if (filteredUsers.isEmpty) {
                     return Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.search_off_outlined, size: 64, color: Colors.grey[300]),
+                          Icon(
+                            Icons.search_off_outlined,
+                            size: 64,
+                            color: Colors.grey[300],
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             _searchController.text.isEmpty
@@ -170,13 +183,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildUserCard(Map<String, dynamic> user, AdminProvider adminProvider) {
+  Widget _buildUserCard(
+    Map<String, dynamic> user,
+    AdminProvider adminProvider,
+  ) {
     final userId = user['id'] as int? ?? 0;
     final name = (user['name'] ?? 'Unknown').toString();
     final email = (user['email'] ?? '').toString();
@@ -186,7 +205,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
 
     // Get initials from name
     final initials = name.isNotEmpty
-        ? name.split(' ').map((n) => n.isNotEmpty ? n[0] : '').join('').toUpperCase().substring(0, name.split(' ').length > 1 ? 2 : 1)
+        ? name
+              .split(' ')
+              .map((n) => n.isNotEmpty ? n[0] : '')
+              .join('')
+              .toUpperCase()
+              .substring(0, name.split(' ').length > 1 ? 2 : 1)
         : '?';
 
     return Container(
@@ -205,7 +229,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: isActive ? BrandColors.primaryRed.withOpacity(0.1) : Colors.grey[300],
+          backgroundColor: isActive
+              ? BrandColors.primaryRed.withOpacity(0.1)
+              : Colors.grey[300],
           foregroundColor: isActive ? BrandColors.primaryRed : Colors.grey[600],
           child: Text(
             initials,
@@ -222,10 +248,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         ),
         subtitle: Text(
           '$email • ${role.toUpperCase()}',
-          style: TextStyle(
-            fontSize: 13,
-            color: Colors.grey[500],
-          ),
+          style: TextStyle(fontSize: 13, color: Colors.grey[500]),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -256,8 +279,30 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 isActive ? Icons.block : Icons.check_circle,
                 color: isActive ? Colors.red[400] : Colors.green[500],
               ),
-              onPressed: () => _showToggleConfirmation(userId, name, isActive, adminProvider),
+              onPressed: () => _showToggleConfirmation(
+                userId,
+                name,
+                isActive,
+                adminProvider,
+              ),
               tooltip: isActive ? 'Freeze User' : 'Activate User',
+            ),
+            // View Details Button
+            IconButton(
+              icon: Icon(
+                Icons.info_outline,
+                color: BrandColors.primaryRed,
+                size: 22,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AdminUserDetailsScreen(userId: userId),
+                  ),
+                );
+              },
+              tooltip: 'View Details',
             ),
           ],
         ),
@@ -265,7 +310,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     );
   }
 
-  void _showToggleConfirmation(int userId, String name, bool isActive, AdminProvider adminProvider) {
+  void _showToggleConfirmation(
+    int userId,
+    String name,
+    bool isActive,
+    AdminProvider adminProvider,
+  ) {
     final action = isActive ? 'freeze' : 'activate';
     final newStatus = isActive ? 'frozen' : 'active';
 
@@ -278,22 +328,26 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
           ),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              final success = await adminProvider.toggleUserStatus(userId, newStatus);
+              final success = await adminProvider.toggleUserStatus(
+                userId,
+                newStatus,
+              );
               if (success && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('User $action successfully'),
-                    backgroundColor: isActive ? Colors.red[600] : Colors.green[600],
+                    backgroundColor: isActive
+                        ? Colors.red[600]
+                        : Colors.green[600],
                     behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     margin: const EdgeInsets.all(16),
                     duration: const Duration(seconds: 2),
                   ),
@@ -303,7 +357,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: isActive ? Colors.red[600] : Colors.green[600],
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: Text(action.toUpperCase()),
           ),

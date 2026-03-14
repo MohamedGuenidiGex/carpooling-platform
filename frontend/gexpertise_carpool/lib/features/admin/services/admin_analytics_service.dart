@@ -29,15 +29,13 @@ class AdminAnalyticsService {
   static Future<SystemTrends> fetchSystemTrends({int days = 7}) async {
     try {
       debugPrint(
-        'AdminAnalyticsService: Calling /admin/analytics/trends?days=$days',
+        'AdminAnalyticsService: Calling /admin/analytics/rides-over-time',
       );
-      final response = await ApiClient.get(
-        '/admin/analytics/trends?days=$days',
-      );
+      final response = await ApiClient.get('/admin/analytics/rides-over-time');
       debugPrint('AdminAnalyticsService: Trends response received: $response');
 
-      if (response is Map<String, dynamic>) {
-        return SystemTrends.fromJson(response);
+      if (response is List) {
+        return SystemTrends.fromRidesOverTime(response, days);
       }
 
       throw Exception('Invalid response format from trends API');
@@ -49,12 +47,8 @@ class AdminAnalyticsService {
 
   static Future<StatusDistribution> fetchStatusDistribution() async {
     try {
-      debugPrint(
-        'AdminAnalyticsService: Calling /admin/analytics/status-distribution',
-      );
-      final response = await ApiClient.get(
-        '/admin/analytics/status-distribution',
-      );
+      debugPrint('AdminAnalyticsService: Calling /admin/analytics/ride-status');
+      final response = await ApiClient.get('/admin/analytics/ride-status');
       debugPrint(
         'AdminAnalyticsService: Status distribution response: $response',
       );
@@ -89,6 +83,73 @@ class AdminAnalyticsService {
       throw Exception('Invalid response format from recent activity API');
     } catch (e) {
       debugPrint('AdminAnalyticsService: Error fetching recent activity: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch top routes
+  static Future<List<Map<String, dynamic>>> fetchTopRoutes({
+    String? country,
+  }) async {
+    try {
+      final url = country != null
+          ? '/admin/analytics/top-routes?country=$country'
+          : '/admin/analytics/top-routes';
+      debugPrint('AdminAnalyticsService: Calling $url');
+      final response = await ApiClient.get(url);
+      debugPrint('AdminAnalyticsService: Top routes response: $response');
+
+      if (response is List) {
+        return response.cast<Map<String, dynamic>>();
+      }
+
+      throw Exception('Invalid response format from top routes API');
+    } catch (e) {
+      debugPrint('AdminAnalyticsService: Error fetching top routes: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch reservation funnel
+  static Future<Map<String, dynamic>> fetchReservationFunnel() async {
+    try {
+      debugPrint(
+        'AdminAnalyticsService: Calling /admin/analytics/reservation-funnel',
+      );
+      final response = await ApiClient.get(
+        '/admin/analytics/reservation-funnel',
+      );
+      debugPrint(
+        'AdminAnalyticsService: Reservation funnel response: $response',
+      );
+
+      if (response is Map<String, dynamic>) {
+        return response;
+      }
+
+      throw Exception('Invalid response format from reservation funnel API');
+    } catch (e) {
+      debugPrint(
+        'AdminAnalyticsService: Error fetching reservation funnel: $e',
+      );
+      rethrow;
+    }
+  }
+
+  /// Fetch user growth data
+  static Future<List<Map<String, dynamic>>> fetchUserGrowth() async {
+    try {
+      debugPrint('AdminAnalyticsService: Calling /admin/analytics/user-growth');
+      final response = await ApiClient.get('/admin/analytics/user-growth');
+      debugPrint('AdminAnalyticsService: User growth response: $response');
+
+      if (response is List) {
+        return response.cast<Map<String, dynamic>>();
+      }
+
+      throw Exception('Invalid response format from user growth API');
+    } catch (e) {
+      debugPrint('AdminAnalyticsService: Error fetching user growth: $e');
       rethrow;
     }
   }

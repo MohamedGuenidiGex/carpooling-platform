@@ -13,6 +13,8 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   SystemTrends? _trends;
   StatusDistribution? _statusDistribution;
   RecentActivity? _recentActivity;
+  List<Map<String, dynamic>>? _topRoutes;
+  Map<String, dynamic>? _reservationFunnel;
   int _trendsDays = 7;
   bool _isLoading = false;
   String? _errorMessage;
@@ -22,6 +24,8 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   SystemTrends? get trends => _trends;
   StatusDistribution? get statusDistribution => _statusDistribution;
   RecentActivity? get recentActivity => _recentActivity;
+  List<Map<String, dynamic>>? get topRoutes => _topRoutes;
+  Map<String, dynamic>? get reservationFunnel => _reservationFunnel;
   int get trendsDays => _trendsDays;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -34,14 +38,33 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
     try {
       _analytics = await AdminAnalyticsService.fetchDashboardAnalytics();
-      _trends = await AdminAnalyticsService.fetchSystemTrends(
+
+      // Fetch rides over time
+      final ridesData = await AdminAnalyticsService.fetchSystemTrends(
         days: _trendsDays,
       );
+
+      // Fetch user growth data
+      final userGrowthData = await AdminAnalyticsService.fetchUserGrowth();
+      final userGrowthTrends = SystemTrends.fromUserGrowth(
+        userGrowthData,
+        _trendsDays,
+      );
+
+      // Merge trends data
+      _trends = SystemTrends(
+        ridesPerDay: ridesData.ridesPerDay,
+        reservationsPerDay: ridesData.reservationsPerDay,
+        userGrowthPerDay: userGrowthTrends.userGrowthPerDay,
+      );
+
       _statusDistribution =
           await AdminAnalyticsService.fetchStatusDistribution();
       _recentActivity = await AdminAnalyticsService.fetchRecentActivity(
         limit: 10,
       );
+      _topRoutes = await AdminAnalyticsService.fetchTopRoutes();
+      _reservationFunnel = await AdminAnalyticsService.fetchReservationFunnel();
       _isLoading = false;
       notifyListeners();
     } on ApiException catch (e) {
@@ -120,6 +143,18 @@ class AdminAnalyticsProvider extends ChangeNotifier {
       _errorMessage = 'Failed to load trends: $e';
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Fetch top routes with optional country filter
+  Future<void> fetchTopRoutesFiltered({String? country}) async {
+    try {
+      _topRoutes = await AdminAnalyticsService.fetchTopRoutes(country: country);
+      notifyListeners();
+    } catch (e) {
+      debugPrint(
+        'AdminAnalyticsProvider: Error fetching filtered top routes: $e',
+      );
     }
   }
 

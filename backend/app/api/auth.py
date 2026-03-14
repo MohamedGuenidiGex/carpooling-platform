@@ -4,6 +4,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 
 from app.extensions import db
 from app.models import Employee
+from app.models.system_event import log_system_event
 from app.utils.logger import log_action
 
 api = Namespace('auth', description='Authentication operations')
@@ -146,7 +147,17 @@ class Login(Resource):
             }
         )
 
-        # Log successful login
+        # Log system event for user login
+        log_system_event(
+            event_type='USER_LOGIN',
+            entity_type='user',
+            description=f'{employee.name} logged in',
+            user_id=employee.id,
+            metadata={'email': employee.email, 'role': employee.role}
+        )
+        db.session.commit()
+
+        # Log successful login (console)
         log_action(
             action='USER_LOGIN',
             employee_id=employee.id,
