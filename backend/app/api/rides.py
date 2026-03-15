@@ -14,6 +14,7 @@ from app.realtime_events import emit_ride_status_update
 from app.services.ride_expiration_service import check_and_expire_rides
 from app.services.boarding_service import set_boarding_deadlines, check_and_expire_boarding_deadlines
 from app.services.ride_auto_termination_service import check_and_terminate_rides
+from app.services.passenger_request_service import PassengerRequestService
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +354,49 @@ class RideList(Resource):
         for item in serialized_items:
             print(f"DEBUG: Returning ride {item['id']} with coordinates: "
                   f"origin_lat={item.get('origin_lat')}, origin_lng={item.get('origin_lng')}")
+
+        # AI Matching Infrastructure: Create passenger request if search returns no results
+        # This happens silently and does not affect the API response
+        if is_passenger_search and len(serialized_items) == 0:
+            try:
+                current_user_id = get_jwt_identity()
+                
+                # Only create request if we have complete search parameters
+                if has_origin_coords and has_dest_coords and date_from:
+                    # Parse departure time from date_from parameter
+                    try:
+                        if 'T' in date_from:
+                            departure_time = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                        else:
+                            departure_time = datetime.fromisoformat(f'{date_from}T00:00:00')
+                        
+                        # Determine country from coordinates (simple heuristic)
+                        # Tunisia: roughly 30-38°N, 7-12°E
+                        # France: roughly 41-51°N, -5-10°E
+                        if 30 <= origin_lat <= 38 and 7 <= origin_lng <= 12:
+                            country = 'tunisia'
+                        elif 41 <= origin_lat <= 51 and -5 <= origin_lng <= 10:
+                            country = 'france'
+                        else:
+                            # Default to tunisia if uncertain
+                            country = 'tunisia'
+                        
+                        # Create passenger request
+                        PassengerRequestService.create_passenger_request_from_search(
+                            user_id=current_user_id,
+                            origin_lat=origin_lat,
+                            origin_lng=origin_lng,
+                            destination_lat=destination_lat,
+                            destination_lng=destination_lng,
+                            departure_time=departure_time,
+                            country=country
+                        )
+                    except Exception as e:
+                        # Log error but don't fail the request
+                        logger.error(f"Failed to create passenger request: {str(e)}")
+            except Exception as e:
+                # Silently catch any errors - passenger request creation should never break search
+                logger.error(f"Error in passenger request creation: {str(e)}")
 
         return {
             'items': serialized_items,
